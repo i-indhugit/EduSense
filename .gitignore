@@ -1,0 +1,31 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Large local datasets & logs
+datasets/COCO/val2017/
+datasets/*/images/
+logs/*.log
+install_log.txt
+
+# OS
+.DS_Store
+Thumbs.db
