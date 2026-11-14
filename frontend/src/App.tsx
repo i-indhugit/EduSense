@@ -196,53 +196,74 @@ export function App() {
       return;
     }
 
-    navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: cameraFacingMode,
+    const startCamera = async () => {
+      const constraintsList: MediaStreamConstraints[] = [
+        {
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: cameraFacingMode,
+          },
+          audio: false,
         },
-        audio: false,
-      })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+        {
+          video: {
+            facingMode: cameraFacingMode,
+          },
+          audio: false,
+        },
+        {
+          video: true,
+          audio: false,
+        },
+      ];
+
+      for (const constraints of constraintsList) {
+        if (cancelled) return;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (cancelled) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          mediaStreamRef.current = stream;
+          stream.getVideoTracks().forEach((track) => {
+            track.onended = () => {
+              setBrowserCamActive(false);
+              setCameraError('Camera disconnected. Tap Retry Camera.');
+              setMetrics((prev) => ({
+                ...prev,
+                camera_connected: false,
+                live_detected_persons: 0,
+                valid_face_count: 0,
+                active_tracks: 0,
+                students: [],
+              }));
+            };
+          });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => {});
+          }
+          setCameraError(null);
+          setBrowserCamActive(true);
           return;
-        }
-        mediaStreamRef.current = stream;
-        stream.getVideoTracks().forEach((track) => {
-          track.onended = () => {
+        } catch (err: any) {
+          const errName = err?.name || '';
+          if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
             setBrowserCamActive(false);
-            setCameraError('Camera disconnected. Reconnect your webcam and click Retry Camera.');
-            setMetrics((prev) => ({
-              ...prev,
-              camera_connected: false,
-              live_detected_persons: 0,
-              valid_face_count: 0,
-              active_tracks: 0,
-              students: [],
-            }));
-          };
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+            setCameraError('Camera permission denied. Allow camera access in your phone/browser settings and tap Retry Camera.');
+            return;
+          }
+          // Continue to next constraint tier for mobile camera driver compatibility
         }
-        setCameraError(null);
-        setBrowserCamActive(true);
-      })
-      .catch((err) => {
-        setBrowserCamActive(false);
-        const errName = err?.name || '';
-        const friendly =
-          errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
-            ? 'Camera permission denied. Allow camera access in your browser and click Retry Camera.'
-            : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
-            ? 'No camera device detected. Connect a webcam and click Retry Camera.'
-            : err?.message || 'Allow browser camera access for live analysis.';
-        setCameraError(friendly);
-      });
+      }
+
+      setBrowserCamActive(false);
+      setCameraError('Could not start camera with requested constraints. Connect a camera and tap Retry Camera.');
+    };
+
+    startCamera();
 
     return () => {
       cancelled = true;
@@ -468,6 +489,8 @@ export function App() {
                   modelStatus={modelDiag.status}
                   showOverlays={showOverlays}
                   onToggleOverlays={() => setShowOverlays((s) => !s)}
+                  cameraFacingMode={cameraFacingMode}
+                  onToggleFacingMode={() => setCameraFacingMode((m) => (m === 'user' ? 'environment' : 'user'))}
                 />
               </div>
               <div className="lg:col-span-1">

@@ -5,6 +5,10 @@
 @tailwind utilities;
 
 @layer base {
+  html, body {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
     @apply bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-emerald-600 selection:text-white;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, ShieldCheck, User, Sparkles } from 'lucide-react';
+import { Layers, ShieldCheck, User, Sparkles, SwitchCamera } from 'lucide-react';
 import { StudentAnalytics } from '../types/analytics';
 
 interface LiveClassroomViewProps {
@@ -12,6 +12,8 @@ interface LiveClassroomViewProps {
   modelStatus?: string;
   showOverlays?: boolean;
   onToggleOverlays?: () => void;
+  cameraFacingMode?: 'user' | 'environment';
+  onToggleFacingMode?: () => void;
 }
 
 export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
@@ -24,6 +26,8 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
   modelStatus = 'idle',
   showOverlays: externalShowOverlays,
   onToggleOverlays,
+  cameraFacingMode = 'user',
+  onToggleFacingMode,
 }) => {
   const [internalShowOverlays, setInternalShowOverlays] = useState(true);
   const showOverlays = externalShowOverlays ?? internalShowOverlays;
@@ -35,9 +39,19 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-          <h2 className="text-xs font-bold text-white tracking-wide uppercase">Vision Feed &amp; Real-Time Face Overlay</h2>
+          <h2 className="text-xs font-bold text-white tracking-wide uppercase">Vision Feed</h2>
         </div>
         <div className="flex items-center gap-2">
+          {onToggleFacingMode && (
+            <button
+              onClick={onToggleFacingMode}
+              className="text-xs px-2.5 py-1 rounded border font-medium flex items-center gap-1.5 transition-all cursor-pointer bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800"
+              title="Flip between Front and Rear Camera"
+            >
+              <SwitchCamera className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{cameraFacingMode === 'user' ? 'Front' : 'Rear'} Cam</span>
+            </button>
+          )}
           <button
             onClick={toggleOverlays}
             className={`text-xs px-2.5 py-1 rounded border font-medium flex items-center gap-1 transition-all cursor-pointer ${
@@ -54,8 +68,8 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
 
       {/* Main Video Frame Canvas (Browser-Side AI Direct Feed) */}
       <div className="relative w-full aspect-video bg-zinc-950 rounded-lg overflow-hidden border border-zinc-800 flex items-center justify-center">
-        {/* Floating Quick State Tester & Guide Banner */}
-        <div className="absolute top-2 left-2 z-20 flex flex-wrap items-center gap-1.5 bg-zinc-950/85 backdrop-blur border border-zinc-800 px-2.5 py-1 rounded-lg text-[10px] font-mono pointer-events-none">
+        {/* Floating Quick State Tester & Guide Banner (Desktop/Tablet) */}
+        <div className="absolute top-2 left-2 z-20 hidden sm:flex flex-wrap items-center gap-1.5 bg-zinc-950/85 backdrop-blur border border-zinc-800 px-2.5 py-1 rounded-lg text-[10px] font-mono pointer-events-none">
           <span className="text-zinc-400">Calibrated Triggers:</span>
           <span className="text-emerald-400 font-bold bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-800/60">
             ATTENTIVE: Frontal &ge;68%
