@@ -7,7 +7,7 @@ interface MetricsGridProps {
 
 export const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics }) => {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 mb-4">
       {/* Average Attention Card */}
       <div className="inner-card p-3.5 rounded-xl border border-zinc-800">
         <div className="flex items-center justify-between text-zinc-400 mb-2">

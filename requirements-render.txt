@@ -1,0 +1,7 @@
+# Lightweight Render Free-Tier Backend Dependencies (<60MB RAM)
+# All CV inference runs in the browser via MediaPipe Tasks.
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+psutil>=5.9.0
+google-genai>=0.1.0

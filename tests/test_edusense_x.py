@@ -114,23 +114,22 @@ def test_counterfactual_xai():
 
 
 def test_fastapi_rest_endpoints():
-    """Verify core FastAPI REST API responses."""
+    """Verify core FastAPI REST API responses for Browser-AI Metadata Backend."""
     r_root = client.get("/")
     assert r_root.status_code == 200
-    assert r_root.json()["system"] == "EduSense: Multi-Modal Intelligent Classroom Analytics"
+    assert r_root.json()["inference_location"] == "browser"
 
-    r_manifest = client.get("/manifest")
-    assert r_manifest.status_code == 200
-    assert "project" in r_manifest.json()
+    r_health = client.get("/health")
+    assert r_health.status_code == 200
+    assert r_health.json()["status"] == "healthy"
 
-    r_bench = client.get("/benchmarks")
-    assert r_bench.status_code == 200
+    r_status = client.get("/system/status")
+    assert r_status.status_code == 200
+    assert r_status.json()["system"] == "EduSense"
 
-    r_ablation = client.get("/ablation")
-    assert r_ablation.status_code == 200
-
-    r_robust = client.get("/robustness")
-    assert r_robust.status_code == 200
+    r_dash = client.get("/dashboard")
+    assert r_dash.status_code == 200
+    assert r_dash.json()["inference_location"] == "browser"
 
 
 def test_multi_student_feature_isolation():

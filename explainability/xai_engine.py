@@ -17,10 +17,11 @@ class ExplainableAIEngine:
     def __init__(self):
         pass
 
-    def explain_attention(self, gaze_direction: str, pitch_deg: float = -4.0, yaw_deg: float = 2.0, 
+    def explain_attention(self, gaze_direction: str, pitch_deg: Optional[float] = None, yaw_deg: Optional[float] = None,
                           eyes_open: bool = True, phone_detected: bool = False,
-                          has_face: bool = True, confidence: float = 85.0) -> Dict:
-        """Generates Attention XAI explanation."""
+                          has_face: bool = True, confidence: float = 85.0,
+                          posture: str = "Unknown", modality_weights: Optional[Dict[str, float]] = None) -> Dict:
+        """Generates Attention XAI explanation without fabricating unmeasured features."""
         if not has_face:
             return {
                 "status": "No Face Detected",
@@ -37,30 +38,32 @@ class ExplainableAIEngine:
                 "feature_attributions": {}
             }
 
-        conf_val = 0.94 if (eyes_open and not phone_detected and gaze_direction == "Looking at Board") else 0.78
-
         reasons = []
         if gaze_direction == "Looking at Board":
-            reasons.append("Gaze aligned with board")
+            reasons.append("Estimated gaze vector aligned toward front/board")
         elif gaze_direction == "Looking Away":
-            reasons.append("Gaze deflected away from board")
+            reasons.append("Estimated gaze deflected away from board")
         else:
-            reasons.append(f"Gaze status: {gaze_direction}")
+            reasons.append(f"Estimated gaze status: {gaze_direction}")
 
-        reasons.append(f"Head orientation: Pitch {pitch_deg:.1f}°, Yaw {yaw_deg:.1f}°")
-        reasons.append("No drowsiness detected" if eyes_open else "Prolonged eye closure detected")
-        reasons.append("Stable posture")
+        if pitch_deg is not None and yaw_deg is not None:
+            reasons.append(f"Head orientation: Pitch {pitch_deg:.1f}°, Yaw {yaw_deg:.1f}°")
+        else:
+            reasons.append("Head orientation angles unavailable")
+
+        reasons.append("No consistent eye-closure drowsiness detected" if eyes_open else "Sustained eye closure detected")
+        if posture not in ("Unknown", "Unable to Determine", None):
+            reasons.append(f"Observed posture: {posture}")
+        else:
+            reasons.append("Body posture landmarks unavailable")
+
+        attributions = modality_weights or {}
 
         return {
             "gaze_direction": gaze_direction,
-            "confidence_pct": round(conf_val * 100, 1),
+            "confidence_pct": round(confidence, 1),
             "reasons": reasons,
-            "feature_attributions": {
-                "gaze_vector_alignment": 0.50,
-                "head_pose_pitch": 0.25,
-                "eye_openness": 0.15,
-                "distractor_absence": 0.10
-            }
+            "feature_attributions": attributions
         }
 
     def explain_engagement(self, att_pct: float, emotion: str, posture: str, hand_raised: bool,

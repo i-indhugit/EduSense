@@ -1,0 +1,19 @@
+{
+  "model_name": "MobileNetV3-Small (Drowsiness)",
+  "dataset": "Drowsiness Dataset",
+  "task": "Eye State & Yawning Detection",
+  "classes": [
+    "Open_Eyes",
+    "Closed_Eyes",
+    "Yawn",
+    "No_yawn"
+  ],
+  "measured_accuracy": 0.942,
+  "measured_precision": 0.938,
+  "measured_recall": 0.94,
+  "measured_f1_score": 0.939,
+  "latency_ms": 37.9,
+  "fps": 26.4,
+  "model_size_mb": 5.85,
+  "device": "cpu"
+}

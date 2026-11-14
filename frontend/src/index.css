@@ -6,8 +6,17 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 font-sans antialiased selection:bg-blue-600 selection:text-white;
+    @apply bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-emerald-600 selection:text-white;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .panel-card {
+    @apply bg-zinc-900/70 backdrop-blur-sm shadow-lg;
+  }
+  .inner-card {
+    @apply bg-zinc-950/70;
   }
 }
 
@@ -17,12 +26,12 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #020617;
+  background: #09090b;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #27272a;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #3f3f46;
 }

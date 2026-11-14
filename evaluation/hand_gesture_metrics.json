@@ -1,0 +1,19 @@
+{
+  "model_name": "MobileNetV3-Small (Hand Gesture)",
+  "dataset": "Hand Gesture Dataset",
+  "task": "Hand Activity & Participation Gesture Recognition",
+  "classes": [
+    "gestures",
+    "hand_raise",
+    "no_hand",
+    "pointing"
+  ],
+  "measured_accuracy": 0.935,
+  "measured_precision": 0.931,
+  "measured_recall": 0.932,
+  "measured_f1_score": 0.931,
+  "latency_ms": 33.75,
+  "fps": 29.6,
+  "model_size_mb": 5.85,
+  "device": "cpu"
+}

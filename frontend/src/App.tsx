@@ -8,12 +8,12 @@ import { AnalyticsCharts } from './components/AnalyticsCharts';
 import { DebugPanel } from './components/DebugPanel';
 import { StudentDetailModal } from './components/StudentDetailModal';
 import { SingleStudentView } from './components/SingleStudentView';
+import { GeminiInsightsPanel } from './components/GeminiInsightsPanel';
 import { ToastContainer, ToastMessage } from './components/common/ToastContainer';
-import { ClassroomMetrics, StudentAnalytics } from './types/analytics';
-import { LayoutGrid, User, RefreshCw } from 'lucide-react';
-
-const API_BASE = 'http://127.0.0.1:8000';
-const WS_URL = 'ws://127.0.0.1:8000/ws/classroom';
+import { BrowserAiDiagnostics, BrowserAiPipeline, drawOverlayBoxes } from './ai/detector';
+import { API_BASE_URL } from './config';
+import { ClassroomMetrics, StudentAnalytics, TimelinePoint } from './types/analytics';
+import { LayoutGrid, User, RefreshCw, Video, Cpu } from 'lucide-react';
 
 const initialMetrics: ClassroomMetrics = {
   eci_score: 0.0,
@@ -25,136 +25,300 @@ const initialMetrics: ClassroomMetrics = {
   drowsy_count: 0,
   hand_raise_count: 0,
   live_detected_persons: 0,
+  valid_face_count: 0,
   active_tracks: 0,
+  camera_connected: false,
+  camera_source: 'BROWSER_MEDIAPIPE_AI',
+  performance: { fps: 0.0, latency_ms: 0.0 },
   students: [],
   recommendations: [],
 };
 
 export function App() {
   const [metrics, setMetrics] = useState<ClassroomMetrics>(initialMetrics);
-  const [liveFrame, setLiveFrame] = useState<string>('');
-  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [backendOnline, setBackendOnline] = useState<boolean>(false);
+  const [cameraConsentGranted, setCameraConsentGranted] = useState<boolean>(true);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('user');
+  const [browserCamActive, setBrowserCamActive] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraRetryTick, setCameraRetryTick] = useState<number>(0);
+  const [modelRetryTick, setModelRetryTick] = useState<number>(0);
+  const [showOverlays, setShowOverlays] = useState<boolean>(true);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'classroom' | 'focused'>('classroom');
   const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
+  const [timelineHistory, setTimelineHistory] = useState<TimelinePoint[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [modelDiag, setModelDiag] = useState<BrowserAiDiagnostics>({
+    status: 'idle',
+    delegate: 'GPU',
+    error: null,
+    loadedModels: [],
+    browserSupported: typeof WebAssembly === 'object',
+    memoryMb: null,
+  });
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTimelinePushRef = useRef<number>(0);
+  const lastBackendSyncRef = useRef<number>(0);
+  const lastUiUpdateRef = useRef<number>(0);
+  const sessionIdRef = useRef<string>(`session-${Date.now()}`);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const pipelineRef = useRef<BrowserAiPipeline>(new BrowserAiPipeline());
 
   const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random().toString().slice(2, 6)}`;
     setToasts((prev) => [...prev, { ...toast, id }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
+    }, 4500);
   }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // WebSocket connection management with auto-reconnect
+  const applyAnalyticsUpdate = useCallback((analytics: ClassroomMetrics) => {
+    setMetrics(analytics);
+
+    const now = Date.now();
+    if (now - lastTimelinePushRef.current >= 2000 && (analytics.valid_face_count ?? 0) > 0) {
+      lastTimelinePushRef.current = now;
+      const label = new Date().toLocaleTimeString([], {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setTimelineHistory((prev) => [
+        ...prev.slice(-29),
+        {
+          time: label,
+          attention: analytics.avg_attention ?? 0,
+          engagement: analytics.avg_engagement ?? 0,
+          confusion: analytics.avg_confusion ?? 0,
+        },
+      ]);
+    }
+
+    // Periodically send ONLY aggregated anonymized metrics (never raw frames or biometrics)
+    if (now - lastBackendSyncRef.current >= 4000) {
+      lastBackendSyncRef.current = now;
+      fetch(`${API_BASE_URL}/api/analytics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          timestamp: new Date().toISOString(),
+          eci_score: analytics.eci_score,
+          eci_status: analytics.eci_status,
+          avg_attention: analytics.avg_attention,
+          avg_engagement: analytics.avg_engagement,
+          avg_participation: analytics.avg_participation,
+          avg_confusion: analytics.avg_confusion,
+          drowsy_count: analytics.drowsy_count,
+          hand_raise_count: analytics.hand_raise_count,
+          live_detected_persons: analytics.live_detected_persons,
+          valid_face_count: analytics.valid_face_count,
+          active_tracks: analytics.active_tracks,
+          fps: analytics.performance?.fps ?? 0,
+          latency_ms: analytics.performance?.latency_ms ?? 0,
+        }),
+      })
+        .then((res) => {
+          if (res.ok) setBackendOnline(true);
+        })
+        .catch(() => {
+          setBackendOnline(false);
+        });
+    }
+  }, []);
+
+  // Initialize Browser MediaPipe AI Models
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
+    const pipeline = pipelineRef.current;
 
-    const connectWebSocket = () => {
-      try {
-        const ws = new WebSocket(WS_URL);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          if (!isMounted) return;
-          setIsConnected(true);
-          addToast({
-            type: 'success',
-            title: 'Vision Pipeline Connected',
-            message: 'Streaming real-time classroom analytics and webcam feed at ~20 FPS.',
-          });
-        };
-
-        ws.onmessage = (event) => {
-          if (!isMounted) return;
-          try {
-            const data = JSON.parse(event.data);
-            if (data.frame) {
-              setLiveFrame(data.frame);
-            }
-            if (data.analytics) {
-              setMetrics(data.analytics);
-            }
-          } catch (err) {
-            console.error('WebSocket payload parsing error:', err);
-          }
-        };
-
-        ws.onerror = () => {
-          if (!isMounted) return;
-          setIsConnected(false);
-        };
-
-        ws.onclose = () => {
-          if (!isMounted) return;
-          setIsConnected(false);
-          // Auto-reconnect after 2 seconds
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isMounted) {
-              connectWebSocket();
-            }
-          }, 2000);
-        };
-      } catch (err) {
-        setIsConnected(false);
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 2000);
+    pipeline.initialize((diag) => {
+      if (active) setModelDiag({ ...diag });
+    }).then((ok) => {
+      if (!active) return;
+      if (ok) {
+        addToast({
+          type: 'success',
+          title: 'Browser AI Ready',
+          message: `MediaPipe Tasks loaded (${pipeline.diagnostics.delegate} delegate).`,
+        });
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Model Load Failed',
+          message: pipeline.diagnostics.error || 'Could not initialize browser AI models.',
+        });
       }
-    };
-
-    connectWebSocket();
-
-    // Fallback REST polling if WebSocket is not receiving data
-    const fallbackPoll = setInterval(() => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        fetch(`${API_BASE}/dashboard`)
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.frame) setLiveFrame(data.frame);
-            if (data.classroom) {
-              setMetrics({
-                ...data.classroom,
-                students: data.students || [],
-                recommendations: data.recommendations || [],
-              });
-            }
-          })
-          .catch(() => {});
-      }
-    }, 1500);
+    });
 
     return () => {
-      isMounted = false;
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      clearInterval(fallbackPoll);
-      if (wsRef.current) wsRef.current.close();
+      active = false;
     };
-  }, [addToast]);
+  }, [modelRetryTick, addToast]);
 
-  const handleSelectStudent = (studentId: string) => {
-    setSelectedStudentId(studentId);
-  };
+  // Cleanup models on unmount
+  useEffect(() => {
+    const pipeline = pipelineRef.current;
+    return () => {
+      pipeline.dispose();
+    };
+  }, []);
+
+  // Browser MediaDevices getUserMedia camera management
+  const stopBrowserCamera = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      mediaStreamRef.current = null;
+    }
+    setBrowserCamActive(false);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCameraError(null);
+
+    if (!cameraConsentGranted) {
+      stopBrowserCamera();
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const msg = 'Browser camera access requires HTTPS or localhost.';
+      setCameraError(msg);
+      return;
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: cameraFacingMode,
+        },
+        audio: false,
+      })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        mediaStreamRef.current = stream;
+        stream.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            setBrowserCamActive(false);
+            setCameraError('Camera disconnected. Reconnect your webcam and click Retry Camera.');
+            setMetrics((prev) => ({
+              ...prev,
+              camera_connected: false,
+              live_detected_persons: 0,
+              valid_face_count: 0,
+              active_tracks: 0,
+              students: [],
+            }));
+          };
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setCameraError(null);
+        setBrowserCamActive(true);
+      })
+      .catch((err) => {
+        setBrowserCamActive(false);
+        const errName = err?.name || '';
+        const friendly =
+          errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
+            ? 'Camera permission denied. Allow camera access in your browser and click Retry Camera.'
+            : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
+            ? 'No camera device detected. Connect a webcam and click Retry Camera.'
+            : err?.message || 'Allow browser camera access for live analysis.';
+        setCameraError(friendly);
+      });
+
+    return () => {
+      cancelled = true;
+      stopBrowserCamera();
+    };
+  }, [cameraRetryTick, cameraConsentGranted, cameraFacingMode, stopBrowserCamera]);
+
+  // Browser-side real-time AI inference loop (throttled ~10 FPS for CPU/memory efficiency)
+  useEffect(() => {
+    if (!browserCamActive || modelDiag.status !== 'ready') return;
+
+    let rafId = 0;
+    let lastRun = 0;
+
+    const tick = (now: number) => {
+      rafId = requestAnimationFrame(tick);
+      if (now - lastRun < 100) return; // ~10 FPS AI inference
+      lastRun = now;
+
+      const vid = videoRef.current;
+      const canvas = overlayCanvasRef.current;
+      if (!vid || vid.readyState < 2) return;
+
+      const result = pipelineRef.current.processVideoFrame(vid, now, true);
+      if (result) {
+        // Draw overlay boxes directly on canvas every frame without waiting for React re-render
+        if (canvas) {
+          drawOverlayBoxes(canvas, vid.videoWidth, vid.videoHeight, result.students || []);
+        }
+
+        // Throttle React state updates to ~3 times a second (300ms)
+        // Completely eliminates DOM thrashing, card resizing, and UI shaking!
+        if (now - lastUiUpdateRef.current >= 300) {
+          lastUiUpdateRef.current = now;
+          applyAnalyticsUpdate(result);
+        }
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [browserCamActive, modelDiag.status, applyAnalyticsUpdate]);
+
+  // Lightweight backend health check (handles Render free-tier sleeping/cold starts)
+  const checkBackendHealth = useCallback(() => {
+    fetch(`${API_BASE_URL}/health`)
+      .then((res) => {
+        setBackendOnline(res.ok);
+      })
+      .catch(() => {
+        setBackendOnline(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    checkBackendHealth();
+    const timer = setInterval(checkBackendHealth, 15000);
+    return () => clearInterval(timer);
+  }, [checkBackendHealth]);
 
   const studentsList: StudentAnalytics[] = metrics.students || [];
   const focusedStudent = studentsList.find((s) => s.student_id === focusedStudentId) || studentsList[0];
+  const perf = metrics.performance || { fps: 0.0, latency_ms: 0.0 };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
-      {/* Top Header */}
-      <Header metrics={metrics} isConnected={isConnected} />
+      <Header
+        metrics={metrics}
+        isConnected={backendOnline}
+        cameraSourceLabel={browserCamActive ? 'Browser Camera' : 'Camera Off'}
+        modelDiagnostics={modelDiag}
+      />
 
-      {/* Main Container */}
       <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 md:p-6 space-y-6">
-        {/* Navigation / Mode Switcher */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setViewMode('classroom')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -182,52 +346,128 @@ export function App() {
               <User className="w-3.5 h-3.5" />
               Focused Student View
             </button>
+
+            <span className="hidden sm:inline text-zinc-700">|</span>
+
+            <button
+              onClick={() => {
+                if (browserCamActive) {
+                  setCameraConsentGranted(false);
+                  stopBrowserCamera();
+                } else {
+                  setCameraConsentGranted(true);
+                  setCameraRetryTick((c) => c + 1);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                browserCamActive
+                  ? 'bg-rose-950/60 text-rose-300 border-rose-800/80 hover:bg-rose-900/60'
+                  : 'bg-emerald-950/70 text-emerald-300 border-emerald-800/80 hover:bg-emerald-900/60'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5" />
+              {browserCamActive ? 'Stop Camera' : 'Start Camera'}
+            </button>
+
+            <button
+              onClick={() => {
+                setCameraFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+                setCameraRetryTick((c) => c + 1);
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 cursor-pointer transition-all"
+              title="Flip between Front (Selfie) and Back (Classroom) Camera on mobile phones"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{cameraFacingMode === 'user' ? 'Front Cam' : 'Back Cam'}</span>
+            </button>
+
+            <span className="px-2.5 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 bg-zinc-900 text-zinc-300 border border-zinc-800">
+              Browser AI (Zero Cloud Video)
+            </span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 font-mono">
             <span>
-              Live Tracks: <strong className="text-emerald-400">{studentsList.length}</strong>
+              Tracks: <strong className="text-emerald-400">{metrics.active_tracks ?? studentsList.length}</strong>
             </span>
             <span className="text-zinc-600">•</span>
             <span>
-              FPS: <strong className="text-zinc-200">{isConnected ? '20' : '0'}</strong>
+              Latency: <strong className="text-zinc-200">{perf.latency_ms.toFixed(1)} ms</strong>
             </span>
+            <span className="text-zinc-600">•</span>
+            <span>
+              FPS: <strong className="text-zinc-200">{perf.fps.toFixed(1)}</strong>
+            </span>
+            {modelDiag.memoryMb !== null && (
+              <>
+                <span className="text-zinc-600">•</span>
+                <span>
+                  JS Heap: <strong className="text-zinc-200">{modelDiag.memoryMb} MB</strong>
+                </span>
+              </>
+            )}
             <button
-              onClick={() => {
-                fetch(`${API_BASE}/dashboard`)
-                  .then((r) => r.json())
-                  .then((data) => {
-                    if (data.frame) setLiveFrame(data.frame);
-                    if (data.classroom) {
-                      setMetrics({
-                        ...data.classroom,
-                        students: data.students || [],
-                        recommendations: data.recommendations || [],
-                      });
-                    }
-                  });
-              }}
+              onClick={checkBackendHealth}
               className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
-              title="Force Refresh Data"
+              title="Ping Backend Health"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Global Classroom KPI Metrics Grid */}
+        {(cameraError || modelDiag.status === 'error' || !backendOnline) && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-amber-950/40 border border-amber-800/60 text-amber-200 px-4 py-2.5 rounded-xl text-xs">
+            <div className="space-y-1">
+              {modelDiag.status === 'error' && (
+                <div className="flex items-center gap-1.5 text-rose-300">
+                  <Cpu className="w-3.5 h-3.5 shrink-0" />
+                  <span>Browser AI model failure: {modelDiag.error}</span>
+                </div>
+              )}
+              {cameraError && <div>{cameraError}</div>}
+              {!backendOnline && (
+                <div>
+                  Metadata backend is sleeping or waking up (Render free-tier cold start). Browser AI continues running locally.
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {modelDiag.status === 'error' && (
+                <button
+                  onClick={() => setModelRetryTick((c) => c + 1)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/50 text-rose-100 font-semibold cursor-pointer"
+                >
+                  Retry Models
+                </button>
+              )}
+              {cameraError && (
+                <button
+                  onClick={() => setCameraRetryTick((c) => c + 1)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-100 font-semibold cursor-pointer"
+                >
+                  Retry Camera
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <MetricsGrid metrics={metrics} />
 
-        {/* Dynamic View Modes */}
         {viewMode === 'classroom' ? (
           <>
-            {/* Primary Grid: Video Stream + Pedagogical Recommendations */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <LiveClassroomView
-                  frame={liveFrame}
                   students={studentsList}
-                  onSelectStudent={handleSelectStudent}
+                  onSelectStudent={(id) => setSelectedStudentId(id)}
+                  videoRef={videoRef}
+                  overlayCanvasRef={overlayCanvasRef}
+                  browserCamActive={browserCamActive}
+                  modelStatus={modelDiag.status}
+                  showOverlays={showOverlays}
+                  onToggleOverlays={() => setShowOverlays((s) => !s)}
                 />
               </div>
               <div className="lg:col-span-1">
@@ -235,60 +475,58 @@ export function App() {
               </div>
             </div>
 
-            {/* Secondary Grid: Spatial Heatmap + Analytics Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <SpatialHeatmap students={studentsList} onSelectStudent={handleSelectStudent} />
-              <AnalyticsCharts metrics={metrics} />
+              <SpatialHeatmap students={studentsList} onSelectStudent={(id) => setSelectedStudentId(id)} />
+              <AnalyticsCharts metrics={metrics} timelineHistory={timelineHistory} />
             </div>
+
+            <GeminiInsightsPanel metrics={metrics} backendOnline={backendOnline} />
           </>
         ) : (
           <div className="space-y-4">
-            {/* Student Picker Pill Bar */}
             {studentsList.length > 0 ? (
               <div className="flex items-center gap-2 overflow-x-auto pb-2">
                 <span className="text-xs text-zinc-400 font-semibold uppercase tracking-wider mr-1">
                   Select Student:
                 </span>
-                {studentsList.map((st) => (
+                {studentsList.map((s) => (
                   <button
-                    key={st.student_id}
-                    onClick={() => setFocusedStudentId(st.student_id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                      focusedStudent?.student_id === st.student_id
-                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                        : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:border-zinc-700'
+                    key={s.student_id}
+                    onClick={() => setFocusedStudentId(s.student_id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer border ${
+                      (focusedStudent?.student_id || '') === s.student_id
+                        ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700'
+                        : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
                     }`}
                   >
-                    {st.student_id} ({st.attention_pct.toFixed(0)}%)
+                    {s.student_id}
                   </button>
                 ))}
               </div>
-            ) : (
-              <div className="p-8 text-center text-zinc-500 bg-zinc-900/40 rounded-xl border border-zinc-800">
-                No active students detected. Ensure webcam is active and face is visible.
-              </div>
-            )}
+            ) : null}
 
-            {focusedStudent && (
-              <SingleStudentView student={focusedStudent} frame={liveFrame} />
-            )}
+            <SingleStudentView student={focusedStudent} />
           </div>
         )}
 
-        {/* Debug & Telemetry Information Panel */}
-        <DebugPanel students={studentsList} />
+        <DebugPanel
+          students={studentsList}
+          personCount={metrics.live_detected_persons ?? 0}
+          validFaceCount={metrics.valid_face_count ?? 0}
+          activeTracks={metrics.active_tracks ?? studentsList.length}
+        />
       </main>
 
-      {/* Deep-Dive Student Detail Modal (opens on student card click) */}
-      <StudentDetailModal
-        studentId={selectedStudentId}
-        onClose={() => setSelectedStudentId(null)}
-      />
+      {selectedStudentId && (
+        <StudentDetailModal
+          studentId={selectedStudentId}
+          studentData={studentsList.find((s) => s.student_id === selectedStudentId) || null}
+          onClose={() => setSelectedStudentId(null)}
+        />
+      )}
 
-      {/* Global Toast Alerts */}
       <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
     </div>
   );
 }
-
 export default App;

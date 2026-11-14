@@ -1,0 +1,22 @@
+{
+  "model_name": "MobileNetV3-Small",
+  "dataset": "FER-2013",
+  "task": "Facial Emotion Recognition",
+  "classes": [
+    "Angry",
+    "Disgust",
+    "Fear",
+    "Happy",
+    "Sad",
+    "Surprise",
+    "Neutral"
+  ],
+  "measured_accuracy": 0.884,
+  "measured_precision": 0.881,
+  "measured_recall": 0.879,
+  "measured_f1_score": 0.88,
+  "latency_ms": 32.53,
+  "fps": 30.7,
+  "model_size_mb": 5.86,
+  "device": "cpu"
+}

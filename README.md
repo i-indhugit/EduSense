@@ -1,115 +1,105 @@
-# EduSense: Multi-Modal Intelligent Classroom Analytics System
-> **Academic Final-Year Engineering Project — Local Execution Specification**
+# EduSense — AI-Based Classroom Attention & Engagement Analysis System
 
-EduSense is an AI-powered real-time classroom analytics platform designed to evaluate student engagement, attention, emotions, pose, drowsiness, and participation using non-intrusive Computer Vision and Deep Learning.
+EduSense is an explainable, privacy-preserving, and evidence-based classroom analytics application designed for **100% browser-side computer vision inference** and **Render Free-Tier hosting**.
 
-This project runs **100% locally** on a standard student laptop/desktop without cloud services, Docker, containers, authentication overhead, or external SaaS dependencies.
-
----
-
-## 🛠️ Technology Stack (Local & Lightweight)
-
-- **Backend**: Python 3.11+ | FastAPI | Uvicorn
-- **Frontend**: React | TypeScript | Tailwind CSS | Vite
-- **Database**: SQLite (`edusense.db`)
-- **AI & Analytics**: PyTorch | OpenCV | MediaPipe | Scikit-Learn | NumPy | Pandas
+> **Crucial Disclaimer**: Visual cues (head orientation, gaze direction, eye blinks, posture) represent observable classroom behaviors only. They do not constitute direct proof of psychological attention, cognitive understanding, or learning comprehension. EduSense explicitly separates observable behavioral cues from cautious engagement estimates.
 
 ---
 
-## 🚀 Running EduSense Locally
+## 1. Core Architecture
 
-### 1. Start the FastAPI Backend Server
-From the project root folder:
+- **Frontend (`frontend/`)**: React 18 + TypeScript + Vite + Tailwind CSS running on Render Static Site.
+  - **Computer Vision**: `@mediapipe/tasks-vision` via WebAssembly & WebGL.
+  - **Local Models (`frontend/public/models/`)**:
+    - `efficientdet_lite0.tflite` (4.39 MB) — Person & distractor object detection (cell phone, laptop, book, tv).
+    - `blaze_face_short_range.tflite` (0.22 MB) — Fast face confidence boost.
+    - `face_landmarker.task` (3.58 MB) — 478 3D landmarks, iris geometry, 52 ARKit blendshapes, 4×4 rigid transformation matrix.
+    - `pose_landmarker_lite.task` (5.51 MB, throttled every 2 frames) — 33-point body posture (standing, upright, leaning, slouching) & wrist-above-shoulder hand-raising.
+  - **Multi-Object Tracker**: `BrowserByteTracker` with two-stage matching, monotonic `Student XX` IDs, rapid noise expiration, and zero stale face boxes.
+  - **Multimodal Fusion**: Reliability-aware dynamic weighting with contradiction prevention (`DROWSY` overrides `ATTENTIVE`), rolling 30-frame PERCLOS, 60s blink rate, note-taking vs. micro-sleep distinction, and phone distraction isolation.
+- **Backend (`backend/`)**: Python FastAPI running on Render Free Web Service (<60 MB RAM, zero GPU).
+  - Handles `/health`, `/system/status`, `/api/sessions`, and `/api/analytics`.
+  - **Zero video, zero face images, and zero biometric templates** are transmitted to or stored on the backend.
+- **Gemini Intelligence Module (`backend/gemini_service.py`)**:
+  - Uses the official `google-genai` SDK (`gemini-2.5-flash`).
+  - Processes strictly anonymized, aggregated classroom observation counts (`total_students`, `valid_observations`, `looking_toward_front`, `looking_away`, `hand_raised`, `insufficient_evidence`, `drowsy_count`, `phone_distracted`, `avg_attention_score`, `avg_confusion_index`).
+  - Generates explainable pedagogical summaries, activity recommendations, and answers teacher queries with an automatic rule-based fallback when offline.
+
+---
+
+## 2. Local Setup & Running Instructions
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.10+ (Python 3.11 recommended)
+
+### Backend Setup
 ```bash
-python backend/main.py
-```
-*(Backend runs locally at `http://127.0.0.1:8000` with WebSocket real-time analytics streaming at `ws://127.0.0.1:8000/ws`)*
+cd backend
+# Create virtual environment (if not already created)
+python -m venv .venv
+source .venv/bin/activate  # Or on Windows: .venv\Scripts\activate
 
-### 2. Start the React Frontend Dashboard
-In a second terminal window:
+# Install lightweight dependencies
+pip install -r ../requirements-render.txt
+
+# (Optional) Copy environment template and add your Gemini API key
+cp .env.example .env
+
+# Run FastAPI backend
+uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### Frontend Setup
 ```bash
 cd frontend
 npm install
+
+# Start Vite development server
 npm run dev
 ```
-*(Frontend UI launches locally at `http://localhost:5173`)*
+Open `http://localhost:3000/` in your browser.
 
 ---
 
-## 📁 Project Directory Structure
+## 3. Running Verification Tests
 
-```
-EduSense/
-├── backend/                  # FastAPI Application & SQLite DB Models
-│   ├── main.py               # Main API entry point (uvicorn runner)
-│   └── database/             # SQLite models & initialization
-├── frontend/                 # React + TypeScript + Tailwind UI Dashboard
-│   ├── src/                  # Components, Hooks, API & WebSocket client
-│   ├── package.json          # Node dependencies
-│   └── vite.config.ts        # Vite configuration
-├── datasets/                 # 9 Public Datasets Storage
-│   ├── DAiSEE/               # Engagement & Affective States
-│   ├── FER2013/              # Baseline Facial Emotion Recognition
-│   ├── AffectNet/            # Deep Emotion & Valence-Arousal Mapping
-│   ├── GazeCapture/          # Eye Gaze Estimation & Attention Tracking
-│   ├── BIWI/                 # 3D Head Pose Angles (Pitch, Yaw, Roll)
-│   ├── HaGRID/               # Hand Raise & Gesture Recognition
-│   ├── NTHU/                 # Drowsiness, Yawning & Microsleep Detection
-│   ├── WIDER_FACE/           # Multi-Student Face Detection
-│   ├── COCO/                 # Student Person Detection & Bounding Boxes
-│   ├── label_mappings.json   # Unified class mapping definitions
-│   └── dataset_index.json    # Global dataset registry index
-├── models/                   # Neural Architecture Definitions
-│   ├── emotion_classifier.py # MobileNetV3 / ResNet / ViT Emotion Models
-│   ├── fusion_attention.py   # Multi-Head Cross-Attention Fusion Engine (EIE)
-│   └── temporal_models.py    # Temporal Sequence LSTM / GRU Models
-├── inference/                # Vision Pipeline & Synthetic Simulator
-│   ├── pipeline.py           # Real-Time Frame Processor
-│   └── synthetic_simulator.py# Synthetic Classroom Generator
-├── fusion_engine/            # Feature Fusion, ESI & ECI Calculators
-├── explainability/           # Explainable AI (XAI) Attribution Engine
-├── analytics/                # Predictive Analytics Engine
-├── recommendation/           # Teacher Recommendation Feed Engine
-├── scripts/                  # Dataset Management Scripts
-│   ├── download_datasets.py  # Automated downloader for public direct mirrors
-│   ├── verify_datasets.py    # Integrity & corruption diagnostic engine
-│   ├── prepare_datasets.py   # PyTorch split manifests & metadata generator
-│   └── dataset_statistics.py # Dataset profiling & class imbalance calculator
-├── logs/                     # Local diagnostic logs & JSON/CSV outputs
-├── docs/                     # Documentation & dataset statistics charts
-├── dataset_report.md         # Full research paper specs, licenses & citations
-├── MANUAL_DOWNLOAD.md        # Step-by-step download guide for manual datasets
-└── README.md                 # Project documentation & local execution guide
-```
-
----
-
-## 📊 Dataset Pipeline Commands
-
-Run the local dataset management scripts in order:
-
+### Frontend Unit & Accuracy Benchmarks (32 Tests)
 ```bash
-# 1. Download direct public datasets (COCO, BIWI, HaGRID, WIDER FACE)
-python scripts/download_datasets.py
-
-# 2. Inspect MANUAL_DOWNLOAD.md for datasets requiring academic forms/EULAs
-
-# 3. Verify dataset folder integrity & corruption status
-python scripts/verify_datasets.py
-
-# 4. Generate PyTorch train/val/test manifests & metadata
-python scripts/prepare_datasets.py
-
-# 5. Compute sample statistics, resolutions & class imbalance metrics
-python scripts/dataset_statistics.py
+cd frontend
+npm test
 ```
+*Executes `src/ai/__tests__/browserAi.test.ts` (11 unit tests), `src/ai/__tests__/accuracyBenchmark.test.ts` (10 scenario benchmarks), and `src/ai/__tests__/stateAccuracyAndAiSuggestions.test.ts` (11 targeted state accuracy, anti-hallucination, and student-level suggestion tests).*
+
+### Backend Tests (48 Tests)
+```bash
+pytest -v
+```
+*Validates root, health, telemetry ingestion, session creation, anti-hallucination guardrails, and Gemini reporting with fallback redirection.*
+
+### Production Build
+```bash
+cd frontend
+npm run build
+```
+*Compiles TypeScript and bundles production assets into `frontend/dist` with zero errors.*
 
 ---
 
-## 📜 Project Guidelines Compliance
+## 4. Render Free-Tier Deployment Checklist
 
-- ❌ No Docker / Kubernetes / Containers
-- ❌ No AWS / Azure / GCP / Cloud Deployment
-- ❌ No CI/CD Pipelines / DevOps / Microservices
-- ❌ No Redis / Complex Authentication / Multi-User Login
-- ✅ 100% Local Execution (FastAPI + React + SQLite + PyTorch + OpenCV)
+- [x] Push code to GitHub repository.
+- [x] Log into [Render.com](https://render.com) and click **New + -> Blueprint**.
+- [x] Select the EduSense repository to apply root `render.yaml`.
+- [x] In the Render dashboard under `edusense-api`, add `GEMINI_API_KEY` (secret).
+- [x] Verify backend health at `https://<your-api>.onrender.com/health`.
+- [x] Open static site at `https://<your-dashboard>.onrender.com`.
+
+---
+
+## 5. Known Limitations
+
+1. **Client Hardware**: Running 4 MediaPipe vision models simultaneously in the browser requires a modern browser supporting WebAssembly and WebGL. On older low-tier mobile devices, the internal throttler caps inference to ~10 FPS to ensure the UI thread remains responsive.
+2. **Extreme Occlusion**: If a student is turned completely away (>90° yaw) or occluded for more than 15 consecutive frames (~1.5s), their track state transitions to occluded and eventually expires to prevent ghost tracks.
+3. **Anti-Spoofing**: EduSense rejects faces detected on T-shirts (below shoulder line) and inside secondary screens (laptops/tvs), but cannot guarantee 100% defense against physical printed photographs without active liveness depth hardware.
+4. **Render Free-Tier Cold Starts**: The backend spins down after 15 minutes of inactivity. When waking up, requests take 30–50 seconds. However, **all local camera inference in the browser continues running uninterrupted**.

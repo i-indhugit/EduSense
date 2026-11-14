@@ -1,0 +1,21 @@
+{
+  "model_name": "ResNet18 (Student Engagement)",
+  "dataset": "Student Engagement Dataset",
+  "task": "Student Engagement Behavior Classification",
+  "classes": [
+    "Confused",
+    "Engaged",
+    "Frustrated",
+    "Looking Away",
+    "Bored",
+    "Drowsy"
+  ],
+  "measured_accuracy": 0.912,
+  "measured_precision": 0.908,
+  "measured_recall": 0.91,
+  "measured_f1_score": 0.909,
+  "latency_ms": 77.39,
+  "fps": 12.9,
+  "model_size_mb": 42.68,
+  "device": "cpu"
+}

@@ -20,12 +20,14 @@ frontend/.vite/
 backend/.env
 frontend/.env
 
-# Large local datasets & logs
-datasets/COCO/val2017/
-datasets/*/images/
-logs/*.log
+# Large local datasets, unused checkpoints & logs
+datasets/
+logs/
 install_log.txt
+models/*.pth
+haarcascade_*.xml
 
 # OS
 .DS_Store
 Thumbs.db
+
