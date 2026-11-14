@@ -11,7 +11,7 @@ import {
   KeyRound,
   Compass,
 } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, getApiBaseUrl } from '../config';
 import { ClassroomMetrics } from '../types/analytics';
 
 export interface FallbackGuidance {
@@ -94,7 +94,7 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
     };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/gemini/report`, {
+      const res = await fetch(`${getApiBaseUrl()}/api/gemini/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

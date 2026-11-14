@@ -100,44 +100,83 @@ export class BrowserAiPipeline {
     onStatus?.(this.diagnostics);
 
     const tryInitWithDelegate = async (delegate: 'GPU' | 'CPU') => {
-      const vision = await FilesetResolver.forVisionTasks('/wasm');
+      let vision;
+      try {
+        vision = await FilesetResolver.forVisionTasks('/wasm');
+      } catch {
+        vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+        );
+      }
       const loaded: string[] = [];
 
-      const objDet = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: '/models/efficientdet_lite0.tflite', delegate },
-        runningMode: 'VIDEO',
-        scoreThreshold: 0.32,
-        maxResults: 20,
-      });
+      const loadModel = async <T>(
+        loader: (path: string) => Promise<T>,
+        localPath: string,
+        fallbackUrl: string
+      ): Promise<T> => {
+        try {
+          return await loader(localPath);
+        } catch {
+          return await loader(fallbackUrl);
+        }
+      };
+
+      const objDet = await loadModel(
+        (path) =>
+          ObjectDetector.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: path, delegate },
+            runningMode: 'VIDEO',
+            scoreThreshold: 0.32,
+            maxResults: 20,
+          }),
+        '/models/efficientdet_lite0.tflite',
+        'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite'
+      );
       loaded.push('ObjectDetector (efficientdet_lite0)');
 
-      const faceDet = await FaceDetector.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: '/models/blaze_face_short_range.tflite', delegate },
-        runningMode: 'VIDEO',
-        minDetectionConfidence: 0.45,
-      });
+      const faceDet = await loadModel(
+        (path) =>
+          FaceDetector.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: path, delegate },
+            runningMode: 'VIDEO',
+            minDetectionConfidence: 0.45,
+          }),
+        '/models/blaze_face_short_range.tflite',
+        'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite'
+      );
       loaded.push('FaceDetector (blaze_face_short_range)');
 
-      const faceLm = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate },
-        runningMode: 'VIDEO',
-        numFaces: 10,
-        minFaceDetectionConfidence: 0.45,
-        minFacePresenceConfidence: 0.45,
-        minTrackingConfidence: 0.45,
-        outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: true,
-      });
+      const faceLm = await loadModel(
+        (path) =>
+          FaceLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: path, delegate },
+            runningMode: 'VIDEO',
+            numFaces: 10,
+            minFaceDetectionConfidence: 0.45,
+            minFacePresenceConfidence: 0.45,
+            minTrackingConfidence: 0.45,
+            outputFaceBlendshapes: true,
+            outputFacialTransformationMatrixes: true,
+          }),
+        '/models/face_landmarker.task',
+        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
+      );
       loaded.push('FaceLandmarker (478-pt + blendshapes)');
 
-      const poseLm = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: '/models/pose_landmarker_lite.task', delegate },
-        runningMode: 'VIDEO',
-        numPoses: 10,
-        minPoseDetectionConfidence: 0.40,
-        minPosePresenceConfidence: 0.40,
-        minTrackingConfidence: 0.40,
-      });
+      const poseLm = await loadModel(
+        (path) =>
+          PoseLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: path, delegate },
+            runningMode: 'VIDEO',
+            numPoses: 10,
+            minPoseDetectionConfidence: 0.40,
+            minPosePresenceConfidence: 0.40,
+            minTrackingConfidence: 0.40,
+          }),
+        '/models/pose_landmarker_lite.task',
+        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'
+      );
       loaded.push('PoseLandmarker (lite)');
 
       return { objDet, faceDet, faceLm, poseLm, loaded };

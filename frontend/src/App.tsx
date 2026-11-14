@@ -11,7 +11,7 @@ import { SingleStudentView } from './components/SingleStudentView';
 import { GeminiInsightsPanel } from './components/GeminiInsightsPanel';
 import { ToastContainer, ToastMessage } from './components/common/ToastContainer';
 import { BrowserAiDiagnostics, BrowserAiPipeline, drawOverlayBoxes } from './ai/detector';
-import { API_BASE_URL } from './config';
+import { API_BASE_URL, getApiBaseUrl } from './config';
 import { ClassroomMetrics, StudentAnalytics, TimelinePoint } from './types/analytics';
 import { LayoutGrid, User, RefreshCw, Video, Cpu } from 'lucide-react';
 
@@ -105,7 +105,7 @@ export function App() {
     // Periodically send ONLY aggregated anonymized metrics (never raw frames or biometrics)
     if (now - lastBackendSyncRef.current >= 4000) {
       lastBackendSyncRef.current = now;
-      fetch(`${API_BASE_URL}/api/analytics`, {
+      fetch(`${getApiBaseUrl()}/api/analytics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

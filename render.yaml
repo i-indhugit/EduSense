@@ -21,12 +21,13 @@ services:
     runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: edusense-api
-          property: host
+    headers:
+      - path: /models/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /wasm/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
     routes:
       - type: rewrite
         source: /*
