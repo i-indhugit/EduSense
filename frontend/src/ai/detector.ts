@@ -6,7 +6,12 @@ import {
   PoseLandmarker,
 } from '@mediapipe/tasks-vision';
 import { ClassroomMetrics, StudentAnalytics } from '../types/analytics';
-import { BlendshapeCategory, extractBehavioralFeatures } from './features';
+import {
+  BlendshapeCategory,
+  estimateHeadPoseFromMatrix,
+  estimateScreenGlowFromPixels,
+  extractBehavioralFeatures,
+} from './features';
 import { BrowserEngagementFusion } from './fusion';
 import { BrowserByteTracker, DetectionCandidate } from './tracker';
 import {
@@ -59,6 +64,75 @@ export class BrowserAiPipeline {
   private lastPoses: NormalizedLandmark[][] = [];
   private fpsHistory: number[] = [];
   private lastFrameTs = 0;
+
+  private glowCanvas: HTMLCanvasElement | null = null;
+  private glowCtx: CanvasRenderingContext2D | null = null;
+
+  private sampleScreenGlow(
+    source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    lms: NormalizedLandmark[],
+    imgW: number,
+    imgH: number,
+    eyeLookDownAvg: number,
+    pitchDeg: number
+  ): { detected: boolean; confidence: number } {
+    try {
+      if (typeof document === 'undefined') return { detected: false, confidence: 0 };
+      if (!this.glowCanvas) {
+        this.glowCanvas = document.createElement('canvas');
+        this.glowCanvas.width = 32;
+        this.glowCanvas.height = 32;
+        this.glowCtx = this.glowCanvas.getContext('2d', { willReadFrequently: true });
+      }
+      const ctx = this.glowCtx;
+      if (!ctx || !lms || lms.length < 160) {
+        return { detected: false, confidence: 0 };
+      }
+
+      const fore = lms[10];
+      const chin = lms[152];
+      if (!fore || !chin) return { detected: false, confidence: 0 };
+
+      const fx = Math.max(0, Math.min(imgW - 12, Math.round(fore.x * imgW - 6)));
+      const fy = Math.max(0, Math.min(imgH - 12, Math.round(fore.y * imgH - 6)));
+      const cx = Math.max(0, Math.min(imgW - 12, Math.round(chin.x * imgW - 6)));
+      const cy = Math.max(0, Math.min(imgH - 12, Math.round(chin.y * imgH - 6)));
+
+      // Sample forehead patch
+      ctx.clearRect(0, 0, 32, 32);
+      ctx.drawImage(source as any, fx, fy, 12, 12, 0, 0, 12, 12);
+      const fData = ctx.getImageData(0, 0, 12, 12).data;
+      let fR = 0, fG = 0, fB = 0, fCount = 0;
+      for (let i = 0; i < fData.length; i += 4) {
+        fR += fData[i];
+        fG += fData[i + 1];
+        fB += fData[i + 2];
+        fCount++;
+      }
+      fR /= fCount || 1;
+      fG /= fCount || 1;
+      fB /= fCount || 1;
+
+      // Sample chin patch
+      ctx.clearRect(0, 0, 32, 32);
+      ctx.drawImage(source as any, cx, cy, 12, 12, 0, 0, 12, 12);
+      const cData = ctx.getImageData(0, 0, 12, 12).data;
+      let cR = 0, cG = 0, cB = 0, cCount = 0;
+      for (let i = 0; i < cData.length; i += 4) {
+        cR += cData[i];
+        cG += cData[i + 1];
+        cB += cData[i + 2];
+        cCount++;
+      }
+      cR /= cCount || 1;
+      cG /= cCount || 1;
+      cB /= cCount || 1;
+
+      return estimateScreenGlowFromPixels([fR, fG, fB], [cR, cG, cB], eyeLookDownAvg, pitchDeg);
+    } catch {
+      return { detected: false, confidence: 0 };
+    }
+  }
 
   public diagnostics: BrowserAiDiagnostics = {
     status: 'idle',
@@ -410,6 +484,8 @@ export class BrowserAiPipeline {
       poseLandmarks: NormalizedLandmark[] | null;
       faceQuality: number;
       phoneDetected: boolean;
+      screenGlowDetected?: boolean;
+      screenGlowConfidence?: number;
     }> = [];
 
     const usedLmIndices = new Set<number>();
@@ -460,6 +536,23 @@ export class BrowserAiPipeline {
         qualityScore: faceQuality,
       });
 
+      let screenGlowDetected = false;
+      let screenGlowConfidence = 0;
+      if (matchedLms && matchedLms.length >= 160) {
+        const lookDown = matchedBlendshapes
+          ? ((matchedBlendshapes.find((b) => b.categoryName === 'eyeLookDownLeft')?.score ?? 0) +
+              (matchedBlendshapes.find((b) => b.categoryName === 'eyeLookDownRight')?.score ?? 0)) /
+            2
+          : 0;
+        const pitchApprox =
+          matchedMatrix && matchedMatrix.length >= 12
+            ? estimateHeadPoseFromMatrix(matchedMatrix).pitchDeg
+            : 0;
+        const glow = this.sampleScreenGlow(source, matchedLms, imgW, imgH, lookDown, pitchApprox);
+        screenGlowDetected = glow.detected;
+        screenGlowConfidence = glow.confidence;
+      }
+
       personFeaturesMeta.push({
         faceLandmarks: matchedLms,
         blendshapes: matchedBlendshapes,
@@ -467,6 +560,8 @@ export class BrowserAiPipeline {
         poseLandmarks: pose,
         faceQuality,
         phoneDetected,
+        screenGlowDetected,
+        screenGlowConfidence,
       });
     });
 
@@ -549,7 +644,9 @@ export class BrowserAiPipeline {
         imgW,
         imgH,
         meta?.phoneDetected ?? false,
-        meta?.transformMatrix
+        meta?.transformMatrix,
+        meta?.screenGlowDetected ?? false,
+        meta?.screenGlowConfidence ?? 0.0
       );
 
       students.push(this.fusion.evaluateStudent(track, feat));
@@ -653,8 +750,10 @@ export function drawOverlayBoxes(
       ctx.strokeRect(fx1, fy1, fx2 - fx1, fy2 - fy1);
 
       // Primary State Pill
+      const isScreenGlow = s.screen_glow_detected && s.final_state === 'PHONE DISTRACTED';
       const phoneIcon = s.final_state === 'PHONE DISTRACTED' ? '📱 ' : '';
-      const primaryLabel = `${phoneIcon}${s.student_id} • ${s.final_state} (${Math.round(s.attention_pct)}%)`;
+      const stateText = isScreenGlow ? 'PHONE GLOW' : s.final_state;
+      const primaryLabel = `${phoneIcon}${s.student_id} • ${stateText} (${Math.round(s.attention_pct)}%)`;
       ctx.font = '600 12px Inter, system-ui, sans-serif';
       const textW = ctx.measureText(primaryLabel).width;
       const pillY = Math.max(0, fy1 - 24);
@@ -664,9 +763,10 @@ export function drawOverlayBoxes(
       ctx.fillText(primaryLabel, fx1 + 7, pillY + 15);
 
       // Secondary Live Behavioral Cue Sub-Pill (e.g., "Eyes: Open/Closed • Gaze • AI Suggestion")
+      const glowPrefix = isScreenGlow ? 'Screen Light Reflection • ' : '';
       const eyeText = s.is_drowsy ? 'Eyes: CLOSED' : (s.ear_value != null && s.ear_value < 0.23) ? 'Eyes: Droop' : 'Eyes: Open';
       const actionText = s.ai_suggestion?.action ? ` • AI: ${s.ai_suggestion.action}` : '';
-      const cueText = `${eyeText} • Gaze: ${s.gaze_direction}${actionText}`;
+      const cueText = `${glowPrefix}${eyeText} • Gaze: ${s.gaze_direction}${actionText}`;
       ctx.font = '500 10px Inter, system-ui, sans-serif';
       const subW = ctx.measureText(cueText).width;
       const subPillY = fy2 + 4;

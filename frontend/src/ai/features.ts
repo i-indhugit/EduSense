@@ -27,6 +27,8 @@ export interface BehavioralFeatures {
   eyeLookDownAvg: number;
   gazeDeviation: number;
   phoneDetected: boolean;
+  screenGlowDetected?: boolean;
+  screenGlowConfidence?: number;
   emotion: 'Neutral' | 'Happy' | 'Confused' | 'Sleepy' | 'Frustrated' | 'Bored' | 'Unable to Determine';
   emotionConfidence: number;
   expressionProbabilities?: Record<string, number>;
@@ -402,6 +404,40 @@ export function extractPoseBehavior(
   return { handRaised, posture, postureConfidence, handConfidence, postureRejection, handRejection };
 }
 
+/**
+ * Analyzes photometric screen glow reflection on the student's face.
+ * Detects upward diffuse screen illumination (higher chin luminance vs forehead / cool blue light spectrum)
+ * cast by mobile phones and hand-held screens held below eye level.
+ */
+export function estimateScreenGlowFromPixels(
+  foreheadRgb: [number, number, number],
+  chinRgb: [number, number, number],
+  eyeLookDownAvg: number,
+  pitchDeg: number
+): { detected: boolean; confidence: number; ratio: number } {
+  const [fR, fG, fB] = foreheadRgb;
+  const [cR, cG, cB] = chinRgb;
+
+  const foreLum = 0.299 * fR + 0.587 * fG + 0.114 * fB;
+  const chinLum = 0.299 * cR + 0.587 * cG + 0.114 * cB;
+
+  const lumRatio = chinLum / Math.max(1.0, foreLum);
+  const chinBlueRatio = cB / Math.max(1.0, cR);
+  const foreBlueRatio = fB / Math.max(1.0, fR);
+  const isCoolTint = chinBlueRatio > foreBlueRatio + 0.12;
+
+  // Upward screen illumination: chin is noticeably brighter than forehead (normal ambient lighting has forehead brighter)
+  const isUpwardLight = lumRatio >= 1.10;
+  const isLookingDownAtScreen = eyeLookDownAvg >= 0.22 || pitchDeg >= 7;
+
+  if ((isUpwardLight || (isCoolTint && chinLum >= 45)) && isLookingDownAtScreen) {
+    const conf = Math.min(0.96, Math.max(0.65, (lumRatio - 1.0) * 1.5 + (isCoolTint ? 0.2 : 0)));
+    return { detected: true, confidence: Number(conf.toFixed(2)), ratio: Number(lumRatio.toFixed(2)) };
+  }
+
+  return { detected: false, confidence: 0, ratio: Number(lumRatio.toFixed(2)) };
+}
+
 export function extractBehavioralFeatures(
   faceLandmarks: NormalizedLandmark[] | null,
   blendshapes: BlendshapeCategory[] | undefined,
@@ -410,7 +446,9 @@ export function extractBehavioralFeatures(
   imgW: number,
   imgH: number,
   phoneDetected = false,
-  transformMatrix?: number[] | Float32Array
+  transformMatrix?: number[] | Float32Array,
+  screenGlowDetected = false,
+  screenGlowConfidence = 0.0
 ): BehavioralFeatures {
   const ts = Date.now();
   const poseBehavior = extractPoseBehavior(poseLandmarks);
@@ -444,6 +482,8 @@ export function extractBehavioralFeatures(
       eyeLookDownAvg: 0,
       gazeDeviation: 0,
       phoneDetected,
+      screenGlowDetected: false,
+      screenGlowConfidence: 0,
       emotion: 'Unable to Determine',
       emotionConfidence: 0,
       expressionProbabilities: {},
@@ -497,6 +537,8 @@ export function extractBehavioralFeatures(
     eyeLookDownAvg,
     gazeDeviation,
     phoneDetected,
+    screenGlowDetected,
+    screenGlowConfidence,
     emotion: expr.emotion,
     emotionConfidence: expr.confidence,
     expressionProbabilities: expr.probabilities,

@@ -95,6 +95,7 @@ export interface StudentAnalytics {
   perclos_pct?: number;
   blink_rate_bpm?: number;
   phone_detected?: boolean;
+  screen_glow_detected?: boolean;
   behavioral_cue?: string;
   ai_suggestion?: {
     action: string;

@@ -3,7 +3,7 @@ import { DATASET_SAMPLES } from '../../components/LiveClassroomView';
 import { isPhoneAssociatedWithPerson, isInsideDistractorScreen } from '../validation';
 import { BrowserByteTracker, TrackedPerson } from '../tracker';
 import { BrowserEngagementFusion } from '../fusion';
-import { BehavioralFeatures } from '../features';
+import { BehavioralFeatures, estimateScreenGlowFromPixels } from '../features';
 import { drawOverlayBoxes } from '../detector';
 
 function createMockTrack(studentId = 'Student 01', trackId = 1): TrackedPerson {
@@ -197,5 +197,45 @@ describe('Dataset Samples & Phone Distraction Feature End-to-End Suite', () => {
     expect(phoneLabel).toBeDefined();
     expect(phoneLabel.text).toContain('Student 01');
     expect(phoneLabel.text).toContain('22%');
+  });
+
+  it('6. Detects phone screen light reflection falling on student face (photometric screen glow)', () => {
+    // Scenario A: Overhead classroom light -> Forehead brighter than chin -> No screen glow
+    const overheadNormal = estimateScreenGlowFromPixels([180, 175, 170], [130, 125, 120], 0.1, 0);
+    expect(overheadNormal.detected).toBe(false);
+
+    // Scenario B: Student looking down at phone -> Screen shines upwards on chin -> Inverted luminance & cool tint
+    // Chin is illuminated brighter by screen (210 vs forehead 140) + downward eye look
+    const screenLightCast = estimateScreenGlowFromPixels([140, 140, 140], [210, 215, 240], 0.35, 14);
+    expect(screenLightCast.detected).toBe(true);
+    expect(screenLightCast.confidence).toBeGreaterThanOrEqual(0.65);
+    expect(screenLightCast.ratio).toBeGreaterThan(1.1);
+  });
+
+  it('7. Flags PHONE DISTRACTED when phone light reflection is detected without visible phone hardware', () => {
+    const fusion = new BrowserEngagementFusion();
+    const track = createMockTrack('Student 03', 3);
+
+    // Phone hardware itself is under the desk (phoneDetected = false),
+    // BUT phone screen light is illuminating the student's face (screenGlowDetected = true)!
+    const concealedPhoneGlowFeat = createBaseFeatures({
+      phoneDetected: false, // Phone body occluded by desk
+      screenGlowDetected: true, // Light from phone falling on student!
+      gazeDirection: 'Looking Down / Away',
+      eyeLookDownAvg: 0.38,
+      pitchDeg: 14,
+      posture: 'Slouching',
+    });
+
+    const res = fusion.evaluateStudent(track, concealedPhoneGlowFeat);
+
+    expect(res.final_state).toBe('PHONE DISTRACTED');
+    expect(res.screen_glow_detected).toBe(true);
+    expect(res.behavioral_cue).toBe('Phone Screen Light Reflection');
+    expect(res.attention_status).toBe('Phone Screen Illumination Detected');
+    expect(res.attention_pct).toBeLessThanOrEqual(30);
+    expect(res.ai_suggestion?.action).toBe('Concealed Device Check');
+    expect(res.ai_suggestion?.priority).toBe('HIGH');
+    expect(res.ai_suggestion?.pedagogical_tip).toContain('Phone screen light reflection detected');
   });
 });

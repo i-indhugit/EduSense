@@ -371,10 +371,12 @@ export class BrowserEngagementFusion {
       behavioralCue = isMicroSleep ? 'Micro-Sleep / Head Nodding' : 'Drowsy (Sustained Eye Closure)';
       attentionStatus = behavioralCue;
       cautiousCategory = 'Low visible engagement-related cues';
-    } else if (feat.phoneDetected) {
+    } else if (feat.phoneDetected || feat.screenGlowDetected) {
       finalState = 'PHONE DISTRACTED';
-      behavioralCue = 'Phone Distraction';
-      attentionStatus = 'Phone / Secondary Device In Use';
+      behavioralCue = feat.phoneDetected ? 'Phone Distraction' : 'Phone Screen Light Reflection';
+      attentionStatus = feat.phoneDetected
+        ? 'Phone / Secondary Device In Use'
+        : 'Phone Screen Illumination Detected';
       cautiousCategory = 'Low visible engagement-related cues';
     } else if (isBoredDisengaged) {
       finalState = 'LOW ATTENTION';
@@ -450,6 +452,7 @@ export class BrowserEngagementFusion {
       `Pose: ${feat.posture}`,
     ];
     if (feat.phoneDetected) evidenceParts.push('Phone detected in student region');
+    if (feat.screenGlowDetected) evidenceParts.push('Phone screen light reflection cast onto student lower face');
 
     const explanation = isDrowsyConsistent
       ? `Estimated drowsy behavior from sustained eye closure (${drowsyCount}/${buf.drowsyFlags.length} frames).`
@@ -464,10 +467,12 @@ export class BrowserEngagementFusion {
           'Student is showing sustained eye closure / micro-sleep cues. Ask an interactive question or invite them to share thoughts.',
         priority: 'HIGH',
       };
-    } else if (feat.phoneDetected) {
+    } else if (feat.phoneDetected || feat.screenGlowDetected) {
       aiSuggestion = {
-        action: 'Device Distraction Redirection',
-        pedagogical_tip: 'Mobile phone detected in student region. Gently remind student to stow secondary devices.',
+        action: feat.phoneDetected ? 'Device Distraction Redirection' : 'Concealed Device Check',
+        pedagogical_tip: feat.phoneDetected
+          ? 'Mobile phone detected in student region. Gently remind student to stow secondary devices.'
+          : 'Phone screen light reflection detected on student lower face with downward gaze. Gently prompt student to refocus.',
         priority: 'HIGH',
       };
     } else if (confusionIndex >= 50) {
@@ -516,7 +521,7 @@ export class BrowserEngagementFusion {
 
     const calibratedAttention = isDrowsyConsistent
       ? Math.min(28, Math.max(8, Math.round(smoothedAtt * 0.3)))
-      : feat.phoneDetected
+      : (feat.phoneDetected || feat.screenGlowDetected)
       ? Math.min(30, Math.max(12, Math.round(smoothedAtt * 0.35)))
       : smoothedAtt;
 
@@ -554,7 +559,8 @@ export class BrowserEngagementFusion {
       is_yawning: isYawningConsistent,
       perclos_pct: perclosPct,
       blink_rate_bpm: blinkRateBpm,
-      phone_detected: feat.phoneDetected,
+      phone_detected: feat.phoneDetected || Boolean(feat.screenGlowDetected),
+      screen_glow_detected: Boolean(feat.screenGlowDetected),
       behavioral_cue: behavioralCue,
       hand_raised: handRaisedConsistent,
       posture: feat.posture,
