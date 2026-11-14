@@ -239,7 +239,7 @@ export class BrowserAiPipeline {
   }
 
   public processVideoFrame(
-    video: HTMLVideoElement,
+    source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
     timestampMs: number,
     cameraConnected: boolean
   ): ClassroomMetrics | null {
@@ -248,21 +248,29 @@ export class BrowserAiPipeline {
       !this.objectDetector ||
       !this.faceDetector ||
       !this.faceLandmarker ||
-      !this.poseLandmarker ||
-      video.readyState < 2 ||
-      video.videoWidth === 0 ||
-      video.videoHeight === 0
+      !this.poseLandmarker
     ) {
       return null;
     }
 
+    const isVideo = source instanceof HTMLVideoElement;
+    const isImg = source instanceof HTMLImageElement;
+    if (isVideo && (source.readyState < 2 || source.videoWidth === 0 || source.videoHeight === 0)) {
+      return null;
+    }
+    if (isImg && (!source.complete || source.naturalWidth === 0 || source.naturalHeight === 0)) {
+      return null;
+    }
+
     const t0 = performance.now();
-    const imgW = video.videoWidth;
-    const imgH = video.videoHeight;
+    const imgW = isVideo ? source.videoWidth : isImg ? source.naturalWidth : (source as HTMLCanvasElement).width;
+    const imgH = isVideo ? source.videoHeight : isImg ? source.naturalHeight : (source as HTMLCanvasElement).height;
+    if (imgW === 0 || imgH === 0) return null;
+
     this.frameCounter += 1;
 
     // 1. Person & Distractor Object Detection
-    const objRes = this.objectDetector.detectForVideo(video, timestampMs);
+    const objRes = this.objectDetector.detectForVideo(source, timestampMs);
     const rawPersons: ScoredBBox[] = [];
     const distractors: ScoredBBox[] = [];
 
@@ -292,7 +300,7 @@ export class BrowserAiPipeline {
 
     // 2. Throttled PoseLandmarker
     if (this.frameCounter % this.poseInterval === 1 || this.lastPoses.length === 0) {
-      const poseRes = this.poseLandmarker.detectForVideo(video, timestampMs);
+      const poseRes = this.poseLandmarker.detectForVideo(source, timestampMs);
       this.lastPoses = (poseRes.landmarks || []) as NormalizedLandmark[][];
     }
 
@@ -347,8 +355,8 @@ export class BrowserAiPipeline {
     });
 
     // 3. Face Landmarker (primary) + FaceDetector confidence boost, validated against confirmed person head regions
-    const faceDetRes = this.faceDetector.detectForVideo(video, timestampMs);
-    const faceLmRes = this.faceLandmarker.detectForVideo(video, timestampMs);
+    const faceDetRes = this.faceDetector.detectForVideo(source, timestampMs);
+    const faceLmRes = this.faceLandmarker.detectForVideo(source, timestampMs);
 
     const detFaces: ScoredBBox[] = [];
     for (const det of faceDetRes.detections || []) {

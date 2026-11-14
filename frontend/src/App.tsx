@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { MetricsGrid } from './components/MetricsGrid';
-import { LiveClassroomView } from './components/LiveClassroomView';
+import { LiveClassroomView, DATASET_SAMPLES, DatasetSample, MediaSourceMode } from './components/LiveClassroomView';
 import { TeacherRecommendations } from './components/TeacherRecommendations';
 import { SpatialHeatmap } from './components/SpatialHeatmap';
 import { AnalyticsCharts } from './components/AnalyticsCharts';
@@ -13,7 +13,7 @@ import { ToastContainer, ToastMessage } from './components/common/ToastContainer
 import { BrowserAiDiagnostics, BrowserAiPipeline, drawOverlayBoxes } from './ai/detector';
 import { API_BASE_URL, getApiBaseUrl } from './config';
 import { ClassroomMetrics, StudentAnalytics, TimelinePoint } from './types/analytics';
-import { LayoutGrid, User, RefreshCw, Video, Cpu } from 'lucide-react';
+import { LayoutGrid, User, RefreshCw, Video, Cpu, Database } from 'lucide-react';
 
 const initialMetrics: ClassroomMetrics = {
   eci_score: 0.0,
@@ -40,6 +40,11 @@ export function App() {
   const [cameraConsentGranted, setCameraConsentGranted] = useState<boolean>(true);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('user');
   const [browserCamActive, setBrowserCamActive] = useState<boolean>(false);
+  const [mediaSourceMode, setMediaSourceMode] = useState<MediaSourceMode>('camera');
+  const [activeDatasetSampleId, setActiveDatasetSampleId] = useState<string>('phone-distraction');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isVideoUploaded, setIsVideoUploaded] = useState<boolean>(false);
+  const [isMediaActive, setIsMediaActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraRetryTick, setCameraRetryTick] = useState<number>(0);
   const [modelRetryTick, setModelRetryTick] = useState<number>(0);
@@ -64,6 +69,8 @@ export function App() {
   const sessionIdRef = useRef<string>(`session-${Date.now()}`);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const currentImageRef = useRef<HTMLImageElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const pipelineRef = useRef<BrowserAiPipeline>(new BrowserAiPipeline());
 
@@ -185,7 +192,7 @@ export function App() {
     let cancelled = false;
     setCameraError(null);
 
-    if (!cameraConsentGranted) {
+    if (!cameraConsentGranted || mediaSourceMode !== 'camera') {
       stopBrowserCamera();
       return;
     }
@@ -230,7 +237,7 @@ export function App() {
           stream.getVideoTracks().forEach((track) => {
             track.onended = () => {
               setBrowserCamActive(false);
-              setCameraError('Camera disconnected. Tap Retry Camera.');
+              setCameraError('Camera disconnected. Tap Retry Camera or test with open dataset samples.');
               setMetrics((prev) => ({
                 ...prev,
                 camera_connected: false,
@@ -252,7 +259,7 @@ export function App() {
           const errName = err?.name || '';
           if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
             setBrowserCamActive(false);
-            setCameraError('Camera permission denied. Allow camera access in your phone/browser settings and tap Retry Camera.');
+            setCameraError('Camera permission denied. Allow camera access in your phone/browser settings, or test with open dataset samples.');
             return;
           }
           // Continue to next constraint tier for mobile camera driver compatibility
@@ -260,7 +267,7 @@ export function App() {
       }
 
       setBrowserCamActive(false);
-      setCameraError('Could not start camera with requested constraints. Connect a camera and tap Retry Camera.');
+      setCameraError('Could not start camera with requested constraints. Connect a camera, tap Retry, or test with open dataset samples.');
     };
 
     startCamera();
@@ -269,11 +276,118 @@ export function App() {
       cancelled = true;
       stopBrowserCamera();
     };
-  }, [cameraRetryTick, cameraConsentGranted, cameraFacingMode, stopBrowserCamera]);
+  }, [cameraRetryTick, cameraConsentGranted, cameraFacingMode, mediaSourceMode, stopBrowserCamera]);
+
+  // Dataset Sample & Custom Upload Actions
+  const handleSelectDatasetSample = useCallback(
+    (sample: DatasetSample) => {
+      stopBrowserCamera();
+      setMediaSourceMode('dataset');
+      setActiveDatasetSampleId(sample.id);
+      setUploadedFileName(null);
+      setIsVideoUploaded(false);
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = sample.url;
+      img.onload = () => {
+        currentImageRef.current = img;
+        const canvas = imageCanvasRef.current;
+        if (canvas) {
+          canvas.width = img.naturalWidth || 640;
+          canvas.height = img.naturalHeight || 480;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0);
+        }
+        setIsMediaActive(true);
+
+        // Immediate single inference pass
+        if (pipelineRef.current.diagnostics.status === 'ready' && canvas) {
+          const res = pipelineRef.current.processVideoFrame(canvas, performance.now(), true);
+          if (res) {
+            if (overlayCanvasRef.current) {
+              drawOverlayBoxes(overlayCanvasRef.current, canvas.width, canvas.height, res.students || []);
+            }
+            applyAnalyticsUpdate(res);
+          }
+        }
+      };
+    },
+    [stopBrowserCamera, applyAnalyticsUpdate]
+  );
+
+  const handleFileUpload = useCallback(
+    (file: File) => {
+      stopBrowserCamera();
+      setMediaSourceMode('upload');
+      setUploadedFileName(file.name);
+
+      if (file.type.startsWith('video/')) {
+        setIsVideoUploaded(true);
+        currentImageRef.current = null;
+        const url = URL.createObjectURL(file);
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+          videoRef.current.src = url;
+          videoRef.current.loop = true;
+          videoRef.current.play().catch(() => {});
+        }
+        setIsMediaActive(true);
+      } else {
+        setIsVideoUploaded(false);
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+          currentImageRef.current = img;
+          const canvas = imageCanvasRef.current;
+          if (canvas) {
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0);
+          }
+          setIsMediaActive(true);
+
+          if (pipelineRef.current.diagnostics.status === 'ready' && canvas) {
+            const res = pipelineRef.current.processVideoFrame(canvas, performance.now(), true);
+            if (res) {
+              if (overlayCanvasRef.current) {
+                drawOverlayBoxes(overlayCanvasRef.current, canvas.width, canvas.height, res.students || []);
+              }
+              applyAnalyticsUpdate(res);
+            }
+          }
+        };
+      }
+    },
+    [stopBrowserCamera, applyAnalyticsUpdate]
+  );
+
+  const handleSelectMediaSourceMode = useCallback(
+    (mode: MediaSourceMode) => {
+      if (mode === 'camera') {
+        currentImageRef.current = null;
+        setIsVideoUploaded(false);
+        setIsMediaActive(false);
+        setMediaSourceMode('camera');
+        setCameraConsentGranted(true);
+        setCameraRetryTick((t) => t + 1);
+      } else if (mode === 'dataset') {
+        const initial = DATASET_SAMPLES.find((s) => s.id === activeDatasetSampleId) || DATASET_SAMPLES[0];
+        handleSelectDatasetSample(initial);
+      } else {
+        setIsMediaActive(false);
+        setMediaSourceMode('upload');
+      }
+    },
+    [activeDatasetSampleId, handleSelectDatasetSample]
+  );
 
   // Browser-side real-time AI inference loop (throttled ~10 FPS for CPU/memory efficiency)
   useEffect(() => {
-    if (!browserCamActive || modelDiag.status !== 'ready') return;
+    const isRunning = browserCamActive || isMediaActive;
+    if (!isRunning || modelDiag.status !== 'ready') return;
 
     let rafId = 0;
     let lastRun = 0;
@@ -283,15 +397,37 @@ export function App() {
       if (now - lastRun < 100) return; // ~10 FPS AI inference
       lastRun = now;
 
-      const vid = videoRef.current;
+      const isImageSource = mediaSourceMode === 'dataset' || (mediaSourceMode === 'upload' && !isVideoUploaded);
       const canvas = overlayCanvasRef.current;
-      if (!vid || vid.readyState < 2) return;
+      let source: HTMLVideoElement | HTMLCanvasElement | null = null;
+      let srcW = 0;
+      let srcH = 0;
 
-      const result = pipelineRef.current.processVideoFrame(vid, now, true);
+      if (isImageSource) {
+        source = imageCanvasRef.current;
+        if (source) {
+          srcW = source.width;
+          srcH = source.height;
+          if (currentImageRef.current) {
+            const ctx = source.getContext('2d');
+            ctx?.drawImage(currentImageRef.current, 0, 0);
+          }
+        }
+      } else {
+        const vid = videoRef.current;
+        if (vid && vid.readyState >= 2) {
+          source = vid;
+          srcW = vid.videoWidth;
+          srcH = vid.videoHeight;
+        }
+      }
+
+      if (!source || srcW === 0 || srcH === 0) return;
+
+      const result = pipelineRef.current.processVideoFrame(source, now, true);
       if (result) {
-        // Draw overlay boxes directly on canvas every frame without waiting for React re-render
         if (canvas) {
-          drawOverlayBoxes(canvas, vid.videoWidth, vid.videoHeight, result.students || []);
+          drawOverlayBoxes(canvas, srcW, srcH, result.students || []);
         }
 
         // Throttle React state updates to ~3 times a second (300ms)
@@ -305,7 +441,7 @@ export function App() {
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [browserCamActive, modelDiag.status, applyAnalyticsUpdate]);
+  }, [browserCamActive, isMediaActive, modelDiag.status, mediaSourceMode, isVideoUploaded, applyAnalyticsUpdate]);
 
   // Lightweight backend health check (handles Render free-tier sleeping/cold starts)
   const checkBackendHealth = useCallback(() => {
@@ -462,13 +598,22 @@ export function App() {
                   Retry Models
                 </button>
               )}
-              {cameraError && (
-                <button
-                  onClick={() => setCameraRetryTick((c) => c + 1)}
-                  className="px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-100 font-semibold cursor-pointer"
-                >
-                  Retry Camera
-                </button>
+              {cameraError && mediaSourceMode === 'camera' && (
+                <>
+                  <button
+                    onClick={() => setCameraRetryTick((c) => c + 1)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-100 font-semibold cursor-pointer"
+                  >
+                    Retry Camera
+                  </button>
+                  <button
+                    onClick={() => handleSelectMediaSourceMode('dataset')}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/50 text-purple-100 font-semibold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    <span>Test Open Dataset</span>
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -485,12 +630,19 @@ export function App() {
                   onSelectStudent={(id) => setSelectedStudentId(id)}
                   videoRef={videoRef}
                   overlayCanvasRef={overlayCanvasRef}
-                  browserCamActive={browserCamActive}
+                  imageCanvasRef={imageCanvasRef}
+                  browserCamActive={browserCamActive || isMediaActive}
                   modelStatus={modelDiag.status}
                   showOverlays={showOverlays}
                   onToggleOverlays={() => setShowOverlays((s) => !s)}
                   cameraFacingMode={cameraFacingMode}
                   onToggleFacingMode={() => setCameraFacingMode((m) => (m === 'user' ? 'environment' : 'user'))}
+                  mediaSourceMode={mediaSourceMode}
+                  onSelectMediaSourceMode={handleSelectMediaSourceMode}
+                  activeDatasetSampleId={activeDatasetSampleId}
+                  onSelectDatasetSample={handleSelectDatasetSample}
+                  onFileUpload={handleFileUpload}
+                  uploadedFileName={uploadedFileName}
                 />
               </div>
               <div className="lg:col-span-1">
