@@ -372,9 +372,9 @@ export class BrowserEngagementFusion {
       attentionStatus = behavioralCue;
       cautiousCategory = 'Low visible engagement-related cues';
     } else if (feat.phoneDetected) {
-      finalState = 'LOW ATTENTION';
+      finalState = 'PHONE DISTRACTED';
       behavioralCue = 'Phone Distraction';
-      attentionStatus = 'Phone / Device Distraction';
+      attentionStatus = 'Phone / Secondary Device In Use';
       cautiousCategory = 'Low visible engagement-related cues';
     } else if (isBoredDisengaged) {
       finalState = 'LOW ATTENTION';
@@ -516,6 +516,8 @@ export class BrowserEngagementFusion {
 
     const calibratedAttention = isDrowsyConsistent
       ? Math.min(28, Math.max(8, Math.round(smoothedAtt * 0.3)))
+      : feat.phoneDetected
+      ? Math.min(30, Math.max(12, Math.round(smoothedAtt * 0.35)))
       : smoothedAtt;
 
     return {

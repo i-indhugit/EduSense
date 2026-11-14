@@ -155,13 +155,13 @@ describe('Targeted State Accuracy & Student-Level AI Suggestions Suite', () => {
     expect(res.ai_suggestion!.priority).toBe('HIGH');
   });
 
-  it('5. Phone Distraction: Secondary device triggers LOW ATTENTION and Device Distraction Redirection suggestion', () => {
+  it('5. Phone Distraction: Secondary device triggers PHONE DISTRACTED and Device Distraction Redirection suggestion', () => {
     const fusion = new BrowserEngagementFusion();
     const track = createMockTrack();
     const phoneFeat = createBaseFeatures({ phoneDetected: true });
 
     const res = fusion.evaluateStudent(track, phoneFeat);
-    expect(res.final_state).toBe('LOW ATTENTION');
+    expect(res.final_state).toBe('PHONE DISTRACTED');
     expect(res.phone_detected).toBe(true);
     expect(res.behavioral_cue).toBe('Phone Distraction');
     expect(res.ai_suggestion!.action).toBe('Device Distraction Redirection');

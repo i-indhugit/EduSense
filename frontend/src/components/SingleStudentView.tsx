@@ -14,6 +14,8 @@ export const SingleStudentView: React.FC<SingleStudentViewProps> = ({ student, f
   const stateColor =
     student.final_state === 'DROWSY'
       ? 'text-rose-400 bg-rose-950/60 border-rose-800'
+      : student.final_state === 'PHONE DISTRACTED' || student.phone_detected
+      ? 'text-purple-400 bg-purple-950/60 border-purple-800'
       : student.final_state === 'ATTENTIVE'
       ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800'
       : student.final_state === 'MODERATE'

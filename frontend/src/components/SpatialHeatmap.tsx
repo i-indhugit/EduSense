@@ -29,11 +29,14 @@ export const SpatialHeatmap: React.FC<SpatialHeatmapProps> = ({ students, onSele
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {students.map((student) => {
           const isDrowsy = student.final_state === 'DROWSY' || student.is_drowsy;
+          const isPhone = student.final_state === 'PHONE DISTRACTED' || student.phone_detected;
           const isAttentive = student.final_state === 'ATTENTIVE';
           const isModerate = student.final_state === 'MODERATE';
 
           const badgeClass = isDrowsy
             ? 'bg-rose-950/80 text-rose-300 border-rose-800'
+            : isPhone
+            ? 'bg-purple-950/80 text-purple-300 border-purple-800'
             : isAttentive
             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
             : isModerate

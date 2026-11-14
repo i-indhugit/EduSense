@@ -1,4 +1,4 @@
-import { Eye, Hand, Moon, Brain, HelpCircle } from 'lucide-react';
+import { Eye, Hand, Moon, Brain, HelpCircle, Smartphone } from 'lucide-react';
 import { ClassroomMetrics } from '../types/analytics';
 
 interface MetricsGridProps {
@@ -6,8 +6,10 @@ interface MetricsGridProps {
 }
 
 export const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics }) => {
+  const phoneCount = metrics.phone_distraction_count ?? 0;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 mb-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 sm:gap-3 mb-4">
       {/* Average Attention Card */}
       <div className="inner-card p-3.5 rounded-xl border border-zinc-800">
         <div className="flex items-center justify-between text-zinc-400 mb-2">
@@ -100,6 +102,23 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics }) => {
           <span className="text-[10px] text-zinc-400">flagged</span>
         </div>
         <div className="text-[10px] text-zinc-500 mt-2 font-mono">PERCLOS alert</div>
+      </div>
+
+      {/* Phone Distraction Card */}
+      <div className={`inner-card p-3.5 rounded-xl border transition-colors ${phoneCount > 0 ? 'border-purple-800/80 bg-purple-950/20' : 'border-zinc-800'}`}>
+        <div className="flex items-center justify-between text-zinc-400 mb-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider">Phone Use</span>
+          <Smartphone className={`h-3.5 w-3.5 ${phoneCount > 0 ? 'text-purple-400 animate-pulse' : 'text-zinc-400'}`} />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className={`text-xl font-bold font-mono ${phoneCount > 0 ? 'text-purple-300' : 'text-white'}`}>
+            {phoneCount}
+          </span>
+          <span className="text-[10px] text-zinc-400">flagged</span>
+        </div>
+        <div className={`text-[10px] mt-2 font-mono ${phoneCount > 0 ? 'text-purple-400 font-medium' : 'text-zinc-500'}`}>
+          {phoneCount > 0 ? 'Secondary device active' : 'Zero phone distraction'}
+        </div>
       </div>
     </div>
   );

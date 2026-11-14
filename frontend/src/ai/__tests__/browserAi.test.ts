@@ -185,7 +185,7 @@ describe('Browser AI Detection Validation & Tracking', () => {
     const phoneRes = fusion.evaluateStudent(trk1[0], { ...baseFeat, phoneDetected: true });
     expect(phoneRes.phone_detected).toBe(true);
     expect(phoneRes.behavioral_cue).toBe('Phone Distraction');
-    expect(phoneRes.final_state).toBe('LOW ATTENTION');
+    expect(phoneRes.final_state).toBe('PHONE DISTRACTED');
 
     // Micro-sleep (pitchDeg > 18 + sustained eyesClosed) + PERCLOS
     let microRes;

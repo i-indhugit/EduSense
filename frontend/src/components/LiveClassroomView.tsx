@@ -133,11 +133,14 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
           {students.map((student) => {
             const isDrowsy = student.final_state === 'DROWSY' || student.is_drowsy;
+            const isPhone = student.final_state === 'PHONE DISTRACTED' || student.phone_detected;
             const isAttentive = student.final_state === 'ATTENTIVE';
             const isModerate = student.final_state === 'MODERATE';
 
             const badgeClass = isDrowsy
               ? 'bg-rose-950/80 text-rose-300 border-rose-800'
+              : isPhone
+              ? 'bg-purple-950/80 text-purple-300 border-purple-800'
               : isAttentive
               ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
               : isModerate
@@ -171,7 +174,7 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
                       Attn: <strong className="text-white">{student.final_state === 'UNABLE TO DETERMINE' ? 'N/A' : `${student.attention_pct.toFixed(0)}%`}</strong>
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold font-mono ${badgeClass}`}>
-                      {student.final_state || student.attention_status || 'ATTENTIVE'}
+                      {isPhone && !student.final_state?.includes('📱') ? '📱 ' : ''}{student.final_state || student.attention_status || 'ATTENTIVE'}
                     </span>
                   </div>
                 </div>

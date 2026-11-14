@@ -102,6 +102,8 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
                     <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold font-mono ${
                       student.final_state === 'DROWSY'
                         ? 'bg-rose-950 text-rose-300 border-rose-800'
+                        : student.final_state === 'PHONE DISTRACTED' || student.phone_detected
+                        ? 'bg-purple-950 text-purple-300 border-purple-800'
                         : student.final_state === 'ATTENTIVE'
                         ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
                         : student.final_state === 'MODERATE'

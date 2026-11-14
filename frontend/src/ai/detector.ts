@@ -632,6 +632,8 @@ export function drawOverlayBoxes(
       const color =
         s.final_state === 'DROWSY'
           ? '#f43f5e'
+          : s.final_state === 'PHONE DISTRACTED'
+          ? '#a855f7'
           : s.final_state === 'ATTENTIVE'
           ? '#10b981'
           : s.final_state === 'MODERATE'
@@ -643,7 +645,8 @@ export function drawOverlayBoxes(
       ctx.strokeRect(fx1, fy1, fx2 - fx1, fy2 - fy1);
 
       // Primary State Pill
-      const primaryLabel = `${s.student_id} • ${s.final_state} (${Math.round(s.attention_pct)}%)`;
+      const phoneIcon = s.final_state === 'PHONE DISTRACTED' ? '📱 ' : '';
+      const primaryLabel = `${phoneIcon}${s.student_id} • ${s.final_state} (${Math.round(s.attention_pct)}%)`;
       ctx.font = '600 12px Inter, system-ui, sans-serif';
       const textW = ctx.measureText(primaryLabel).width;
       const pillY = Math.max(0, fy1 - 24);
