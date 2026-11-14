@@ -159,11 +159,10 @@ def build_fallback_guidance(reason: str, total_students: int) -> FallbackGuidanc
         return FallbackGuidance(
             is_fallback=True,
             fallback_reason=reason,
-            redirect_action="SET_GEMINI_API_KEY",
+            redirect_action="CONFIGURE_SERVER_KEY",
             corrective_steps=[
-                "Click 'Set Gemini Key' in the dashboard header or Gemini panel.",
-                "Paste your Google Gemini API key (starts with AIzaSy...).",
-                "Or set GEMINI_API_KEY environment variable on your backend server.",
+                "Set the GEMINI_API_KEY environment variable in your backend environment (.env or Render environment settings).",
+                "Restart or redeploy the backend server so the API key takes effect.",
                 "Click 'Generate Insight' to transition from local rule fallback to deep Gemini 2.5 Flash intelligence.",
             ],
         )

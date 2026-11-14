@@ -8,7 +8,6 @@ import {
   RefreshCw,
   ArrowRight,
   CheckCircle2,
-  KeyRound,
   Compass,
 } from 'lucide-react';
 import { API_BASE_URL, getApiBaseUrl } from '../config';
@@ -41,18 +40,7 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
   const [report, setReport] = useState<GeminiReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
-  const [apiKeyInput, setApiKeyInput] = useState<string>(() => localStorage.getItem('edusense_gemini_key') || '');
-  const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleSaveKey = (key: string) => {
-    setApiKeyInput(key);
-    if (key.trim()) {
-      localStorage.setItem('edusense_gemini_key', key.trim());
-    } else {
-      localStorage.removeItem('edusense_gemini_key');
-    }
-  };
 
   const fetchGeminiReport = async (userQuery?: string) => {
     if (!backendOnline) {
@@ -89,7 +77,7 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
       avg_attention_score: metrics.avg_attention ?? 0,
       avg_confusion_index: metrics.avg_confusion ?? 0,
       student_summaries: studentSummaries,
-      api_key_override: apiKeyInput.trim() || null,
+      api_key_override: null,
       user_query: userQuery?.trim() || null,
     };
 
@@ -135,13 +123,6 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowKeyInput((s) => !s)}
-            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-all cursor-pointer"
-            title="Configure Gemini API Key"
-          >
-            {apiKeyInput ? 'API Key Configured' : 'Set Gemini Key'}
-          </button>
-          <button
             onClick={() => fetchGeminiReport()}
             disabled={loading || !backendOnline}
             className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
@@ -152,24 +133,6 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
           </button>
         </div>
       </div>
-
-      {showKeyInput && (
-        <div className="p-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800 flex items-center gap-2">
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => handleSaveKey(e.target.value)}
-            placeholder="Paste your Google Gemini API Key (starts with AIzaSy...)"
-            className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none"
-          />
-          <button
-            onClick={() => setShowKeyInput(false)}
-            className="px-2.5 py-1 text-xs font-semibold rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 cursor-pointer"
-          >
-            Done
-          </button>
-        </div>
-      )}
 
       {error && (
         <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-lg p-2.5 flex items-center gap-1.5">
@@ -197,15 +160,6 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({ metric
                   <Compass className="w-3.5 h-3.5 text-amber-400" />
                   <span>Fallback Active: Correct Path Redirection</span>
                 </div>
-                {report.fallback_guidance.redirect_action === 'SET_GEMINI_API_KEY' && (
-                  <button
-                    onClick={() => setShowKeyInput(true)}
-                    className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
-                  >
-                    <KeyRound className="w-3 h-3" />
-                    <span>Connect Gemini Key</span>
-                  </button>
-                )}
               </div>
 
               <p className="text-[10px] text-amber-200/80 leading-normal">
