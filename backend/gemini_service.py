@@ -21,6 +21,12 @@ import time
 from typing import Any, Dict, Optional, Set
 from pydantic import BaseModel, Field
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 logger = logging.getLogger("EduSenseGemini")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -58,16 +64,12 @@ def _validate_api_key(key: Optional[str]) -> Optional[str]:
 
 
 def _get_genai_client():
-    global _client, _client_init_attempted
+    global _client
     if _client is not None:
         return _client
-    if _client_init_attempted and _client is None:
-        return None
 
-    _client_init_attempted = True
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
-        logger.info("GEMINI_API_KEY not configured; Gemini reporting running in fallback mode.")
         return None
 
     try:
@@ -233,7 +235,27 @@ def generate_fallback_report(data: AggregateClassroomInput, reason: str) -> Gemi
 
     answer = None
     if data.user_query:
-        answer = f"Aggregate telemetry shows {data.valid_observations} active observation(s) with an average attention behavior score of {data.avg_attention_score}%."
+        q_lower = data.user_query.lower()
+        if any(w in q_lower for w in ["interact", "talk", "approach", "handle", "deal", "address"]):
+            strategies = []
+            if data.phone_distracted > 0:
+                strategies.append("For mobile phone distractions: Use non-confrontational proximity control—casually walk toward that row while speaking to prompt students to put devices away without direct embarrassment.")
+            if data.drowsy_count > 0:
+                strategies.append("For fatigue/drowsiness: Run a 60-second active peer discussion check-in or quick stretch instead of calling out the student.")
+            if data.avg_confusion_index >= 40:
+                strategies.append("For confusion: Ask an open-ended concept check or invite questions on the latest slide to uncover where students feel stuck.")
+            if not strategies:
+                strategies.append("Adopt an open, encouraging tone and use Think-Pair-Share check-ins to invite participation.")
+            answer = " ".join(strategies)
+        elif "phone" in q_lower or "device" in q_lower:
+            answer = "Use non-verbal proximity control: move toward the student's area while explaining the lesson, or initiate an interactive classroom poll to refocus attention naturally."
+        elif "confus" in q_lower or "doubt" in q_lower:
+            answer = f"Class confusion is currently at {round(data.avg_confusion_index)}%. Consider breaking down the previous concept into a simple analogy and pausing for student questions."
+        else:
+            answer = (
+                f"Observable behavioral analysis ({data.valid_observations} student(s) tracked, {round(data.avg_attention_score)}% attention): "
+                + (recs[0] if recs else "Maintain current instructional pace and check in periodically.")
+            )
 
     return GeminiReportResponse(
         available=False,
