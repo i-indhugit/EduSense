@@ -83,22 +83,58 @@ export function isInsideDistractorScreen(faceBox: BBox, distractors: ScoredBBox[
 }
 
 /**
- * Associates a detected cell phone with the specific student box holding/using it.
+ * Associates a detected cell phone or mobile device with the specific student box holding/using it.
+ * Evaluates both spatial bounding box overlap and proximity to student's hands/wrists/lap.
  */
-export function isPhoneAssociatedWithPerson(personBox: BBox, distractors: ScoredBBox[]): boolean {
+export function isPhoneAssociatedWithPerson(
+  personBox: BBox,
+  distractors: ScoredBBox[],
+  poseLandmarks?: NormalizedLandmark[] | null,
+  imgW = 640,
+  imgH = 480
+): boolean {
   const pw = boxWidth(personBox);
+  const ph = boxHeight(personBox);
   for (const d of distractors) {
-    if (d.label !== 'cell phone') continue;
+    const dLabel = (d.label || '').toLowerCase();
+    const isPhoneLabel =
+      dLabel === 'cell phone' ||
+      dLabel.includes('phone') ||
+      dLabel === 'remote';
+    if (!isPhoneLabel) continue;
+
     const dcx = (d.x1 + d.x2) / 2;
     const dcy = (d.y1 + d.y2) / 2;
+
+    // Check overlap with person box or extended reach (hands, desk, lap)
     if (
       computeIoU(personBox, d) > 0 ||
-      (dcx >= personBox.x1 - pw * 0.12 &&
-        dcx <= personBox.x2 + pw * 0.12 &&
+      (dcx >= personBox.x1 - pw * 0.25 &&
+        dcx <= personBox.x2 + pw * 0.25 &&
         dcy >= personBox.y1 &&
-        dcy <= personBox.y2 + 40)
+        dcy <= personBox.y2 + Math.max(90, ph * 0.5))
     ) {
       return true;
+    }
+
+    // Check proximity to student's hands/wrists from pose landmarks if available
+    if (poseLandmarks && poseLandmarks.length >= 17) {
+      const leftWrist = poseLandmarks[15];
+      const rightWrist = poseLandmarks[16];
+      if (leftWrist && (leftWrist.visibility ?? 1) > 0.25) {
+        const wx = leftWrist.x * imgW;
+        const wy = leftWrist.y * imgH;
+        if (Math.hypot(dcx - wx, dcy - wy) < Math.max(85, pw * 0.45)) {
+          return true;
+        }
+      }
+      if (rightWrist && (rightWrist.visibility ?? 1) > 0.25) {
+        const wx = rightWrist.x * imgW;
+        const wy = rightWrist.y * imgH;
+        if (Math.hypot(dcx - wx, dcy - wy) < Math.max(85, pw * 0.45)) {
+          return true;
+        }
+      }
     }
   }
   return false;

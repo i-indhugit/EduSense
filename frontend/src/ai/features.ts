@@ -424,13 +424,13 @@ export function estimateScreenGlowFromPixels(
   const lumRatio = chinLum / Math.max(1.0, foreLum);
   const chinBlueRatio = cB / Math.max(1.0, cR);
   const foreBlueRatio = fB / Math.max(1.0, fR);
-  const isCoolTint = chinBlueRatio > foreBlueRatio + 0.12;
+  const isCoolTint = chinBlueRatio > foreBlueRatio + 0.08;
 
   // Upward screen illumination: chin is noticeably brighter than forehead (normal ambient lighting has forehead brighter)
-  const isUpwardLight = lumRatio >= 1.10;
-  const isLookingDownAtScreen = eyeLookDownAvg >= 0.22 || pitchDeg >= 7;
+  const isUpwardLight = lumRatio >= 1.05;
+  const isLookingDownAtScreen = eyeLookDownAvg >= 0.18 || pitchDeg >= 6;
 
-  if ((isUpwardLight || (isCoolTint && chinLum >= 45)) && isLookingDownAtScreen) {
+  if ((isUpwardLight || (isCoolTint && chinLum >= 40)) && isLookingDownAtScreen) {
     const conf = Math.min(0.96, Math.max(0.65, (lumRatio - 1.0) * 1.5 + (isCoolTint ? 0.2 : 0)));
     return { detected: true, confidence: Number(conf.toFixed(2)), ratio: Number(lumRatio.toFixed(2)) };
   }

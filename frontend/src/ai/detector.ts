@@ -201,7 +201,7 @@ export class BrowserAiPipeline {
           ObjectDetector.createFromOptions(vision, {
             baseOptions: { modelAssetPath: path, delegate },
             runningMode: 'VIDEO',
-            scoreThreshold: 0.32,
+            scoreThreshold: 0.20,
             maxResults: 20,
           }),
         '/models/efficientdet_lite0.tflite',
@@ -365,8 +365,13 @@ export class BrowserAiPipeline {
         if (box.x2 - box.x1 >= 32 && box.y2 - box.y1 >= 44) {
           rawPersons.push(box);
         }
-      } else if (DISTRACTOR_LABELS.has(label) && cat.score >= 0.38) {
-        distractors.push(box);
+      } else {
+        const isPhone = label === 'cell phone' || label.includes('phone') || label === 'remote';
+        if (isPhone && cat.score >= 0.20) {
+          distractors.push({ ...box, label: 'cell phone' });
+        } else if (DISTRACTOR_LABELS.has(label) && cat.score >= 0.32) {
+          distractors.push(box);
+        }
       }
     }
 
@@ -495,7 +500,7 @@ export class BrowserAiPipeline {
       let matchedLmIdx = -1;
       let matchedQuality = 0;
 
-      const phoneDetected = isPhoneAssociatedWithPerson(person, distractors);
+      let phoneDetected = isPhoneAssociatedWithPerson(person, distractors, pose, imgW, imgH);
 
       dedupedLmEntries.forEach((entry, eIdx) => {
         if (usedLmIndices.has(eIdx)) return;
@@ -538,19 +543,44 @@ export class BrowserAiPipeline {
 
       let screenGlowDetected = false;
       let screenGlowConfidence = 0;
+      let lookDown = 0;
+      let pitchApprox = 0;
       if (matchedLms && matchedLms.length >= 160) {
-        const lookDown = matchedBlendshapes
+        lookDown = matchedBlendshapes
           ? ((matchedBlendshapes.find((b) => b.categoryName === 'eyeLookDownLeft')?.score ?? 0) +
               (matchedBlendshapes.find((b) => b.categoryName === 'eyeLookDownRight')?.score ?? 0)) /
             2
           : 0;
-        const pitchApprox =
+        pitchApprox =
           matchedMatrix && matchedMatrix.length >= 12
             ? estimateHeadPoseFromMatrix(matchedMatrix).pitchDeg
             : 0;
         const glow = this.sampleScreenGlow(source, matchedLms, imgW, imgH, lookDown, pitchApprox);
         screenGlowDetected = glow.detected;
         screenGlowConfidence = glow.confidence;
+      }
+
+      // Pose-based phone usage heuristic (wrists together in lap/chest + downward gaze)
+      if (!phoneDetected && pose && pose.length >= 17) {
+        const leftWrist = pose[15];
+        const rightWrist = pose[16];
+        const leftShoulder = pose[11];
+        const rightShoulder = pose[12];
+        if (
+          leftWrist && rightWrist && leftShoulder && rightShoulder &&
+          (leftWrist.visibility ?? 1) > 0.25 &&
+          (rightWrist.visibility ?? 1) > 0.25
+        ) {
+          const sw = Math.abs(leftShoulder.x - rightShoulder.x) * imgW;
+          const wDist = Math.hypot((leftWrist.x - rightWrist.x) * imgW, (leftWrist.y - rightWrist.y) * imgH);
+          const avgWY = ((leftWrist.y + rightWrist.y) / 2) * imgH;
+          const avgSY = ((leftShoulder.y + rightShoulder.y) / 2) * imgH;
+          if (sw > 30 && wDist < Math.max(90, sw * 0.65) && avgWY > avgSY + 15) {
+            if (lookDown > 0.30 || pitchApprox > 9 || screenGlowDetected) {
+              phoneDetected = true;
+            }
+          }
+        }
       }
 
       personFeaturesMeta.push({
@@ -591,7 +621,10 @@ export class BrowserAiPipeline {
         };
         personFeaturesMeta[hostPersonIdx].phoneDetected = isPhoneAssociatedWithPerson(
           primaryCand.personBox,
-          distractors
+          distractors,
+          personPoses[hostPersonIdx],
+          imgW,
+          imgH
         );
       }
       const fw = Math.max(30, entry.box.x2 - entry.box.x1);
@@ -616,7 +649,7 @@ export class BrowserAiPipeline {
         transformMatrix: entry.transformMatrix,
         poseLandmarks: personPoses[hostPersonIdx],
         faceQuality: lmCheck.qualityScore,
-        phoneDetected: isPhoneAssociatedWithPerson(subPerson, distractors),
+        phoneDetected: isPhoneAssociatedWithPerson(subPerson, distractors, personPoses[hostPersonIdx], imgW, imgH),
       });
     });
 

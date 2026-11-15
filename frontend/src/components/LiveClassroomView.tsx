@@ -103,10 +103,10 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
       {/* Video Feed Header Controls & Source Selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 mb-3 px-1">
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${mediaSourceMode === 'camera' ? 'bg-emerald-400' : 'bg-purple-400'} animate-pulse`}></span>
+          <span className={`h-2 w-2 rounded-full ${mediaSourceMode === 'camera' ? 'bg-emerald-400' : 'bg-blue-400'} animate-pulse`}></span>
           <h2 className="text-xs font-bold text-white tracking-wide uppercase">Vision Feed</h2>
           <span className="text-[10px] font-mono text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800">
-            {mediaSourceMode === 'camera' ? 'Live Webcam' : mediaSourceMode === 'dataset' ? 'COCO Open Dataset' : 'Custom Upload'}
+            {mediaSourceMode === 'camera' ? 'Live Webcam' : 'Custom Upload'}
           </span>
         </div>
 
@@ -123,19 +123,6 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
           >
             <Video className="h-3 w-3 text-emerald-400" />
             <span>Camera</span>
-          </button>
-
-          <button
-            onClick={() => onSelectMediaSourceMode?.('dataset')}
-            className={`text-[11px] px-2.5 py-1 rounded font-medium flex items-center gap-1 transition-all cursor-pointer ${
-              mediaSourceMode === 'dataset'
-                ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-            title="Test with Free Online Open Dataset Samples"
-          >
-            <Database className="h-3 w-3 text-purple-400" />
-            <span>Dataset (COCO)</span>
           </button>
 
           <button
@@ -173,41 +160,6 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
         </div>
       </div>
 
-      {/* Dataset Sample Selection Carousel (when in dataset mode) */}
-      {mediaSourceMode === 'dataset' && (
-        <div className="mb-2.5 p-2 rounded-lg bg-zinc-950/80 border border-purple-900/40">
-          <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5 px-0.5">
-            <span className="font-mono text-purple-300 font-semibold flex items-center gap-1">
-              <Database className="h-3 w-3" /> Open Dataset Test Scenarios (1-Click Evaluation):
-            </span>
-            <span className="text-[10px] text-zinc-500 font-mono">Source: MS-COCO 2017 (CC-BY 4.0)</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-            {DATASET_SAMPLES.map((sample) => {
-              const isSelected = activeDatasetSampleId === sample.id;
-              return (
-                <button
-                  key={sample.id}
-                  onClick={() => onSelectDatasetSample?.(sample)}
-                  className={`text-left p-1.5 rounded border transition-all text-xs cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? 'border-purple-600 bg-purple-950/50 shadow-sm'
-                      : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="font-semibold text-white truncate text-[11px]">{sample.name}</div>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className={`text-[9px] font-mono px-1 py-0.5 rounded border ${sample.badgeColor}`}>
-                      {sample.badge}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Custom File Upload Box (when in upload mode) */}
       {mediaSourceMode === 'upload' && (
         <div className="mb-2.5 p-2 rounded-lg bg-zinc-950/80 border border-blue-900/40 flex items-center justify-between gap-3 text-xs">
@@ -242,11 +194,7 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
         {/* Floating Source Indicator Banner */}
         <div className="absolute top-2 left-2 z-20 flex flex-wrap items-center gap-1.5 bg-zinc-950/90 backdrop-blur border border-zinc-800 px-2.5 py-1 rounded-lg text-[10px] font-mono pointer-events-none">
           <span className="text-zinc-400">Target:</span>
-          {mediaSourceMode === 'dataset' ? (
-            <span className="text-purple-300 font-bold bg-purple-950/80 px-1.5 py-0.5 rounded border border-purple-800/80">
-              {activeSample.badge}
-            </span>
-          ) : mediaSourceMode === 'upload' ? (
+          {mediaSourceMode === 'upload' ? (
             <span className="text-blue-300 font-bold bg-blue-950/80 px-1.5 py-0.5 rounded border border-blue-800/80">
               {uploadedFileName || 'CUSTOM MEDIA'}
             </span>
@@ -314,11 +262,6 @@ export const LiveClassroomView: React.FC<LiveClassroomViewProps> = ({
           <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
             Active Detections ({students.length}) — Click to Inspect
           </span>
-          {mediaSourceMode === 'dataset' && (
-            <span className="text-[10px] text-purple-400 font-mono">
-              Evaluating: {activeSample.description}
-            </span>
-          )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
           {students.map((student) => {

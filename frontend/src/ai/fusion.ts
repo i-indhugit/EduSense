@@ -192,6 +192,7 @@ export class BrowserEngagementFusion {
     const isNoteTaking =
       !feat.eyesClosed &&
       !feat.phoneDetected &&
+      !feat.screenGlowDetected &&
       (feat.pitchDeg > 16 || feat.eyeLookDownAvg > 0.58);
     const isOffBoard = feat.gazeDirection !== 'Looking at Board' && !isNoteTaking;
     pushBounded(buf.offBoardWindow, isOffBoard, 20);
@@ -208,6 +209,7 @@ export class BrowserEngagementFusion {
     // - Looking directly at board/camera with forward head -> ~84-96% (ATTENTIVE)
     // - Looking slightly sideways, glanced down, or mild off-center -> ~52-72% (MODERATE)
     // - Looking far away, turned head, or distracted -> <42% (LOW ATTENTION)
+    // - Phone distracted / screen light -> <25% (PHONE DISTRACTED)
     const gazeDeviation = feat.gazeDeviation ?? (feat.gazeDirection === 'Looking at Board' ? 0.08 : 0.65);
     const gazeScore = isNoteTaking
       ? 80
@@ -269,7 +271,7 @@ export class BrowserEngagementFusion {
       }
     }
 
-    if (feat.phoneDetected) rawEngagement = Math.min(rawEngagement, 28);
+    if (feat.phoneDetected || feat.screenGlowDetected) rawEngagement = Math.min(rawEngagement, 22);
     if (isBoredDisengaged) rawEngagement = Math.min(rawEngagement, 42);
 
     pushBounded(buf.attScores, rawEngagement, 16);

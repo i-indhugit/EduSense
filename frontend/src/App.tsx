@@ -13,7 +13,7 @@ import { ToastContainer, ToastMessage } from './components/common/ToastContainer
 import { BrowserAiDiagnostics, BrowserAiPipeline, drawOverlayBoxes } from './ai/detector';
 import { API_BASE_URL, getApiBaseUrl } from './config';
 import { ClassroomMetrics, StudentAnalytics, TimelinePoint } from './types/analytics';
-import { LayoutGrid, User, RefreshCw, Video, Cpu, Database } from 'lucide-react';
+import { LayoutGrid, User, RefreshCw, Video, Cpu, Database, Upload } from 'lucide-react';
 
 const initialMetrics: ClassroomMetrics = {
   eci_score: 0.0,
@@ -237,7 +237,7 @@ export function App() {
           stream.getVideoTracks().forEach((track) => {
             track.onended = () => {
               setBrowserCamActive(false);
-              setCameraError('Camera disconnected. Tap Retry Camera or test with open dataset samples.');
+              setCameraError('Camera disconnected. Tap Retry Camera or choose an image/video to upload.');
               setMetrics((prev) => ({
                 ...prev,
                 camera_connected: false,
@@ -259,7 +259,7 @@ export function App() {
           const errName = err?.name || '';
           if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
             setBrowserCamActive(false);
-            setCameraError('Camera permission denied. Allow camera access in your phone/browser settings, or test with open dataset samples.');
+            setCameraError('Camera permission denied. Allow camera access in your phone/browser settings, or choose an image/video to upload.');
             return;
           }
           // Continue to next constraint tier for mobile camera driver compatibility
@@ -267,7 +267,7 @@ export function App() {
       }
 
       setBrowserCamActive(false);
-      setCameraError('Could not start camera with requested constraints. Connect a camera, tap Retry, or test with open dataset samples.');
+      setCameraError('Could not start camera with requested constraints. Connect a camera, tap Retry, or choose an image/video to upload.');
     };
 
     startCamera();
@@ -607,11 +607,11 @@ export function App() {
                     Retry Camera
                   </button>
                   <button
-                    onClick={() => handleSelectMediaSourceMode('dataset')}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/50 text-purple-100 font-semibold cursor-pointer flex items-center gap-1.5"
+                    onClick={() => handleSelectMediaSourceMode('upload')}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600/40 hover:bg-blue-600/60 border border-blue-500/50 text-blue-100 font-semibold cursor-pointer flex items-center gap-1.5"
                   >
-                    <Database className="w-3.5 h-3.5" />
-                    <span>Test Open Dataset</span>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Image/Video</span>
                   </button>
                 </>
               )}
